@@ -9,7 +9,9 @@ if (CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
   add_compile_options(-Wall -Wextra -Wpedantic -Werror)
 endif()
 
-# Core library
+# ------------------------------------------------------------
+# Core Library (Eigenentwicklung)
+# ------------------------------------------------------------
 add_library(core
   src/core/tokenizer.c
   src/core/stopwords.c
@@ -24,9 +26,9 @@ target_include_directories(core PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-# -----------------------------
-# [EXTERN] Unity test framework (git submodule)
-# -----------------------------
+# ------------------------------------------------------------
+# Unit Tests (TDD) – [EXTERN] Unity Test Framework
+# ------------------------------------------------------------
 enable_testing()
 
 add_executable(unit_tests
@@ -53,3 +55,51 @@ target_include_directories(unit_tests PRIVATE
 target_link_libraries(unit_tests PRIVATE core)
 
 add_test(NAME unit_tests COMMAND unit_tests)
+
+# ------------------------------------------------------------
+# API Dependencies – [EXTERN] CivetWeb + [EXTERN] yyjson
+# ------------------------------------------------------------
+
+find_package(Threads REQUIRED)
+
+add_library(civetweb
+  external/civetweb/src/civetweb.c
+)
+
+target_include_directories(civetweb PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/external/civetweb/include
+)
+
+# [EXTERN] CivetWeb: disable built-in SSL/TLS for simpler builds
+# We run plain HTTP; TLS can be terminated by a reverse proxy (nginx/caddy) later.
+target_compile_definitions(civetweb PRIVATE NO_SSL)
+
+target_link_libraries(civetweb PUBLIC Threads::Threads)
+
+
+add_library(yyjson
+  external/yyjson/src/yyjson.c
+)
+
+target_include_directories(yyjson PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/external/yyjson/src
+)
+
+# ------------------------------------------------------------
+# API Executable
+# ------------------------------------------------------------
+
+add_executable(api_server
+  src/api/main.c
+)
+
+target_include_directories(api_server PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+target_link_libraries(api_server PRIVATE
+  core
+  civetweb
+  yyjson
+  Threads::Threads
+)
