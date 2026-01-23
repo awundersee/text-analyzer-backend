@@ -1,0 +1,19 @@
+# Git / VCS (wichtig!)
+.git/
+.gitmodules
+
+# Build output
+build/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs / temp
+*.log
