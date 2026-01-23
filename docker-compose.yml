@@ -1,0 +1,9 @@
+services:
+  text-analyzer-api:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - STOPWORDS_FILE=/app/data/stopwords_de.txt
+    restart: unless-stopped
