@@ -1,0 +1,94 @@
+{
+  "domainResult": {
+    "bigrams": [
+      {
+        "count": 1,
+        "w1": "apfel",
+        "w2": "apfel"
+      },
+      {
+        "count": 1,
+        "w1": "apfel",
+        "w2": "banane"
+      },
+      {
+        "count": 1,
+        "w1": "apfel",
+        "w2": "birne"
+      },
+      {
+        "count": 1,
+        "w1": "banane",
+        "w2": "apfel"
+      }
+    ],
+    "words": [
+      {
+        "count": 3,
+        "word": "apfel"
+      },
+      {
+        "count": 1,
+        "word": "banane"
+      },
+      {
+        "count": 1,
+        "word": "birne"
+      }
+    ]
+  },
+  "meta": {
+    "charCount": 30,
+    "domain": "https://example.test",
+    "pagesReceived": 1,
+    "runtimeMs": 1,
+    "wordCharCount": 26,
+    "wordCount": 5
+  },
+  "pageResults": [
+    {
+      "bigrams": [
+        {
+          "count": 1,
+          "w1": "apfel",
+          "w2": "apfel"
+        },
+        {
+          "count": 1,
+          "w1": "apfel",
+          "w2": "banane"
+        },
+        {
+          "count": 1,
+          "w1": "apfel",
+          "w2": "birne"
+        },
+        {
+          "count": 1,
+          "w1": "banane",
+          "w2": "apfel"
+        }
+      ],
+      "charCount": 30,
+      "id": 1,
+      "name": "Testseite",
+      "url": "https://example.test/test",
+      "wordCharCount": 26,
+      "wordCount": 5,
+      "words": [
+        {
+          "count": 3,
+          "word": "apfel"
+        },
+        {
+          "count": 1,
+          "word": "banane"
+        },
+        {
+          "count": 1,
+          "word": "birne"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "domain": "https://example.test",
+  "k": 10,
+  "pages": [
+    {
+      "id": 1,
+      "name": "Testseite",
+      "url": "https://example.test/test",
+      "text": "Hallo, Welt! Hallo... Welt? Ja: Hallo; Welt-okay."
+    }
+  ]
+}

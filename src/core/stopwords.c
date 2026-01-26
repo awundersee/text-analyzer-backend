@@ -22,6 +22,19 @@ static void to_lower_ascii(char *s) {
     }
 }
 
+static int is_all_digits(const char *s) {
+    if (!s || !*s) return 0;
+    for (; *s; s++) {
+        if (!isdigit((unsigned char)*s)) return 0;
+    }
+    return 1;
+}
+
+static int is_too_short(const char *s, size_t min_len) {
+    if (!s) return 1;
+    return strlen(s) < min_len;
+}
+
 static int is_stopword_linear(const char *token, char **stopwords, size_t count) {
     for (size_t i = 0; i < count; i++) {
         if (strcmp(token, stopwords[i]) == 0) return 1;
@@ -82,13 +95,19 @@ int filter_stopwords(TokenList *tokens, const char *stopwords_file_path) {
         char *tok = tokens->items[read];
         if (!tok) continue;
 
-        // token is already lowercase from tokenizer for ASCII letters
-        if (is_stopword_linear(tok, stopwords, sw_count)) {
+        // token is already lowercase from tokenizer for ASCII letters, but:
+        // - drop very short tokens (e.g. "e")
+        // - drop numeric-only tokens (e.g. "1", "2025")
+        const size_t MIN_TOKEN_LEN = 2;
+
+        if (is_too_short(tok, MIN_TOKEN_LEN) || is_all_digits(tok) ||
+            is_stopword_linear(tok, stopwords, sw_count)) {
             free(tok);
             tokens->items[read] = NULL;
         } else {
             tokens->items[write++] = tok;
         }
+
     }
 
     // Null out remaining slots

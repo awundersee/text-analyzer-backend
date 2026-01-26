@@ -20,7 +20,7 @@ void test_bigrams_basic(void) {
 void test_bigrams_with_stopwords_filtered(void) {
     TokenList tl = tokenize("Das ist ein Test und das ist nur ein Test");
 
-    int rc = filter_stopwords(&tl, "stopwords_de.txt");
+    int rc = filter_stopwords(&tl, "data/stopwords_de.txt");
     TEST_ASSERT_EQUAL_INT(0, rc);
 
     // after stopwords: ["test", "test"] -> one bigram ("test","test")

@@ -36,11 +36,25 @@ void test_tokenizer_g2_punctuation(void) {
     free_tokens(&tl);
 }
 
+void test_tokenizer_with_stats_counts_including_stopwords(void) {
+    const char *text = "Das ist ein Test";
+    TokenStats st;
+    TokenList tl = tokenize_with_stats(text, &st);
+
+    // Tokens: "das","ist","ein","test"
+    TEST_ASSERT_EQUAL_UINT((unsigned)4, (unsigned)st.wordCount);
+
+    // wordCharCount: 3 + 3 + 3 + 4 = 13
+    TEST_ASSERT_EQUAL_UINT((unsigned)13, (unsigned)st.wordCharCount);
+
+    free_tokens(&tl);
+}
+
 void test_stopwords_g3_basic(void) {
     const char *text = "Das ist ein Test und das ist nur ein Test";
     TokenList tl = tokenize(text);
 
-    int rc = filter_stopwords(&tl, "stopwords_de.txt");
+    int rc = filter_stopwords(&tl, "data/stopwords_de.txt");
     TEST_ASSERT_EQUAL_INT(0, rc);
 
 
@@ -78,6 +92,7 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_tokenizer_g1_hallo_welt);
     RUN_TEST(test_tokenizer_g2_punctuation);
+    RUN_TEST(test_tokenizer_with_stats_counts_including_stopwords);
     RUN_TEST(test_stopwords_g3_basic);
     RUN_TEST(test_freq_g4_basic_counts);
     RUN_TEST(test_aggregate_g5_basic);

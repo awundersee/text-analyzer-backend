@@ -7,3 +7,6 @@
 [submodule "external/yyjson"]
 	path = external/yyjson
 	url = https://github.com/ibireme/yyjson.git
+[submodule "tests/performance/third_party/meta"]
+	path = tests/performance/third_party/meta
+	url = https://github.com/meta-toolkit/meta.git

@@ -17,6 +17,7 @@ Das Frontend der Anwendung ist über folgenden Link erreichbar:
 Voraussetzungen:
 - C Compiler (gcc / clang)
 - CMake ≥ 3.16
+- Python 3 (für Performance-Vergleich mit MeTA, optional)
 
 ```bash
 cmake -S . -B build
@@ -58,6 +59,18 @@ für infrastrukturelle und unterstützende Aufgaben zu nutzen.
 Weitere Lizenz- und Herkunftsinformationen sind in der Datei `THIRD_PARTY_NOTICES.md`
 dokumentiert.
 
+### Python / MeTA (optional)
+
+Für den Performance-Vergleich mit MeTA wird eine **virtuelle Python-Umgebung** empfohlen.
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+Die virtuelle Umgebung (`.venv`) wird **nicht versioniert**, da sie systemabhängig ist.
+
 ## API & Docker
 
 ### API
@@ -90,3 +103,25 @@ lokal oder auf einem Server über Port `8080` angesprochen werden.
 
 Zur Optimierung des Docker-Build-Kontexts wird eine `.dockerignore`-Datei verwendet,
 die Build-Artefakte und Versionsverwaltungsdaten ausschließt.
+
+
+## Tests
+
+### Unit-Tests
+
+Die Unit-Tests sind so integriert, dass sie vor jedem Build-Prozess gestartet werden, um nach Änderungen zu prüfen, ob alle Komponenten noch funktionieren. Die Testfälle liegen im Ordner `./tests/unit`.
+
+### API-Tests
+
+Die API-Tests laufen automatisch bei GitHub Actions, um bei Änderungen sicherzustellen, dass die API läuft. Wenn sie lokal getestet werden soll, ist das über den Konsolen-Aufruf `cmake --build build --target test_api`möglich.
+
+Bei Anpassungen der json-API-Testdateien können mit folgendem Aufruf die erwarteten Werte neu erzeugt werden.
+
+```bash
+chmod +x tests/api/scripts/regen_expected.sh
+API_URL=http://localhost:8080 tests/api/scripts/regen_expected.sh
+```
+
+### Performance-Tests
+
+Die Performance-Tests werden manuell über den Konsolen-Aufruf `cmake --build build --target test_perf`aufgerufen.

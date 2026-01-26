@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <time.h>
 
 #include "civetweb.h"      // from external/civetweb/include
 #include "yyjson.h"        // from external/yyjson/src
@@ -21,9 +22,24 @@ typedef struct {
     const char *stopwords_path;
 } AppConfig;
 
+static char *dup_cstr(const char *s) {
+    if (!s) return NULL;
+    size_t n = strlen(s);
+    char *out = (char *)malloc(n + 1);
+    if (!out) return NULL;
+    memcpy(out, s, n + 1);
+    return out;
+}
+
 static const char *get_env_or_default(const char *key, const char *def) {
     const char *v = getenv(key);
     return (v && v[0] != '\0') ? v : def;
+}
+
+static uint64_t now_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000ULL + (uint64_t)ts.tv_nsec / 1000000ULL;
 }
 
 static int read_request_body(struct mg_connection *conn, char **out_buf, size_t *out_len) {
@@ -85,23 +101,34 @@ static int read_request_body(struct mg_connection *conn, char **out_buf, size_t 
     return 1;
 }
 
+static const char *reason_phrase(int code) {
+    switch (code) {
+        case 200: return "OK";
+        case 400: return "Bad Request";
+        case 401: return "Unauthorized";
+        case 413: return "Payload Too Large";
+        case 500: return "Internal Server Error";
+        default:  return "OK";
+    }
+}
+
 static void send_json(struct mg_connection *conn, int status_code, const char *json_body) {
     if (!conn || !json_body) return;
     mg_printf(conn,
-              "HTTP/1.1 %d OK\r\n"
+              "HTTP/1.1 %d %s\r\n"
               "Content-Type: application/json; charset=utf-8\r\n"
               "Cache-Control: no-store\r\n"
               "Content-Length: %zu\r\n"
               "\r\n"
               "%s",
-              status_code, strlen(json_body), json_body);
+              status_code, reason_phrase(status_code), strlen(json_body), json_body);
 }
 
 static void send_json_error(struct mg_connection *conn, int status_code, const char *msg) {
     yyjson_mut_doc *doc = yyjson_mut_doc_new(NULL);
     yyjson_mut_val *root = yyjson_mut_obj(doc);
     yyjson_mut_doc_set_root(doc, root);
-    yyjson_mut_obj_add_strcpy(doc, root, "error", msg ? msg : "unknown error");
+    yyjson_mut_obj_add_strcpy(doc, root, "message", msg ? msg : "unknown error");
 
     const char *json = yyjson_mut_write(doc, 0, NULL);
     if (json) {
@@ -157,33 +184,38 @@ static int handle_analyze(struct mg_connection *conn, void *cbdata) {
         return 400;
     }
 
-    yyjson_val *texts = yyjson_obj_get(root, "texts");
-    if (!texts || !yyjson_is_arr(texts)) {
+    uint64_t t0 = now_ms();
+    size_t total_chars = 0;    
+    size_t total_wordCount = 0;
+    size_t total_wordCharCount = 0;
+
+    yyjson_val *pages = yyjson_obj_get(root, "pages");
+    if (!pages || !yyjson_is_arr(pages)) {
         yyjson_doc_free(doc);
         free(body);
-        send_json_error(conn, 400, "field 'texts' must be an array of strings");
+        send_json_error(conn, 400, "field 'pages' must be an array");
         return 400;
     }
 
-    int k = parse_k(root, 10);
-
-    // Collect per-text lists for aggregation
-    size_t n_texts = (size_t)yyjson_arr_size(texts);
-    if (n_texts == 0) {
+    size_t n_pages = (size_t)yyjson_arr_size(pages);
+    if (n_pages == 0) {
         yyjson_doc_free(doc);
         free(body);
-        send_json_error(conn, 400, "texts array is empty");
+        send_json_error(conn, 400, "pages array is empty");
         return 400;
     }
-    if (n_texts > 2000) {
+    if (n_pages > 100) {
         yyjson_doc_free(doc);
         free(body);
-        send_json_error(conn, 400, "too many texts (max 2000)");
-        return 400;
+        send_json_error(conn, 413, "too many pages (max 100)");
+        return 413;
     }
 
-    WordCountList *per_words = (WordCountList *)calloc(n_texts, sizeof(WordCountList));
-    BigramCountList *per_bigrams = (BigramCountList *)calloc(n_texts, sizeof(BigramCountList));
+    int k = parse_k(root, 20);
+
+    // Collect per-page lists for aggregation
+    WordCountList *per_words = (WordCountList *)calloc(n_pages, sizeof(WordCountList));
+    BigramCountList *per_bigrams = (BigramCountList *)calloc(n_pages, sizeof(BigramCountList));
     if (!per_words || !per_bigrams) {
         free(per_words);
         free(per_bigrams);
@@ -196,12 +228,41 @@ static int handle_analyze(struct mg_connection *conn, void *cbdata) {
     const char *stop_path = cfg && cfg->stopwords_path ? cfg->stopwords_path : "data/stopwords_de.txt";
 
     size_t idx = 0;
-    yyjson_val *it = NULL;
     yyjson_arr_iter ai;
-    yyjson_arr_iter_init(texts, &ai);
-    while ((it = yyjson_arr_iter_next(&ai))) {
-        if (!yyjson_is_str(it)) {
-            // cleanup
+    yyjson_arr_iter_init(pages, &ai);
+    yyjson_val *page = NULL;
+
+    size_t *page_charCounts = calloc(n_pages, sizeof(size_t));
+    size_t *page_wordCounts = calloc(n_pages, sizeof(size_t));
+    size_t *page_wordCharCounts = calloc(n_pages, sizeof(size_t));
+        
+    long long *page_ids = (long long *)calloc(n_pages, sizeof(long long));
+    char **page_names = (char **)calloc(n_pages, sizeof(char *));
+    char **page_urls  = (char **)calloc(n_pages, sizeof(char *));
+
+    WordCountList *page_top_words = (WordCountList *)calloc(n_pages, sizeof(WordCountList));
+    BigramCountList *page_top_bi  = (BigramCountList *)calloc(n_pages, sizeof(BigramCountList));
+
+    if (!page_charCounts || !page_wordCounts || !page_wordCharCounts ||
+        !page_ids || !page_names || !page_urls || !page_top_words || !page_top_bi) {
+        free(per_words);
+        free(per_bigrams);
+        free(page_charCounts);
+        free(page_wordCounts);
+        free(page_wordCharCounts);
+        free(page_ids);
+        free(page_names);
+        free(page_urls);
+        free(page_top_words);
+        free(page_top_bi);
+        yyjson_doc_free(doc);
+        free(body);
+        send_json_error(conn, 500, "out of memory");
+        return 500;
+    }
+
+    while ((page = yyjson_arr_iter_next(&ai))) {
+        if (!yyjson_is_obj(page)) {
             for (size_t j = 0; j < idx; j++) {
                 free_word_counts(&per_words[j]);
                 free_bigram_counts(&per_bigrams[j]);
@@ -210,16 +271,51 @@ static int handle_analyze(struct mg_connection *conn, void *cbdata) {
             free(per_bigrams);
             yyjson_doc_free(doc);
             free(body);
-            send_json_error(conn, 400, "all entries in 'texts' must be strings");
+            send_json_error(conn, 400, "each entry in 'pages' must be an object");
             return 400;
         }
 
-        const char *txt = yyjson_get_str(it);
+        yyjson_val *t = yyjson_obj_get(page, "text");
+        if (!t || !yyjson_is_str(t)) {
+            for (size_t j = 0; j < idx; j++) {
+                free_word_counts(&per_words[j]);
+                free_bigram_counts(&per_bigrams[j]);
+            }
+            free(per_words);
+            free(per_bigrams);
+            yyjson_doc_free(doc);
+            free(body);
+            send_json_error(conn, 400, "each page must have field 'text' (string)");
+            return 400;
+        }
+
+        const char *txt = yyjson_get_str(t);
         if (!txt) txt = "";
+        yyjson_val *jid = yyjson_obj_get(page, "id");
+        yyjson_val *jname = yyjson_obj_get(page, "name");
+        yyjson_val *jurl = yyjson_obj_get(page, "url");
 
-        TokenList tl = tokenize(txt);
+        page_ids[idx] = (jid && yyjson_is_int(jid)) ? (long long)yyjson_get_sint(jid) : 0;
 
-        // stopwords are optional; if file missing we return error (strict)
+        const char *nm = (jname && yyjson_is_str(jname)) ? yyjson_get_str(jname) : "";
+        const char *ու = (jurl  && yyjson_is_str(jurl))  ? yyjson_get_str(jurl)  : "";
+
+        page_names[idx] = dup_cstr(nm ? nm : "");
+        page_urls[idx]  = dup_cstr(ու ? ու : "");
+
+        size_t page_charCount = strlen(txt);
+        total_chars += page_charCount;
+
+        TokenStats st;
+        TokenList tl = tokenize_with_stats(txt, &st);
+
+        total_wordCount += st.wordCount;
+        total_wordCharCount += st.wordCharCount;
+
+        page_charCounts[idx] = page_charCount;
+        page_wordCounts[idx] = st.wordCount;
+        page_wordCharCounts[idx] = st.wordCharCount;
+
         int rc = filter_stopwords(&tl, stop_path);
         if (rc != 0) {
             free_tokens(&tl);
@@ -237,6 +333,8 @@ static int handle_analyze(struct mg_connection *conn, void *cbdata) {
 
         per_words[idx] = count_words(&tl);
         per_bigrams[idx] = count_bigrams(&tl);
+        page_top_words[idx] = top_k_words(&per_words[idx], (size_t)k);
+        page_top_bi[idx]    = top_k_bigrams(&per_bigrams[idx], (size_t)k);
 
         free_tokens(&tl);
         idx++;
@@ -245,6 +343,7 @@ static int handle_analyze(struct mg_connection *conn, void *cbdata) {
     // Aggregate
     WordCountList agg_words = aggregate_word_counts(per_words, idx);
     BigramCountList agg_bigrams = aggregate_bigram_counts(per_bigrams, idx);
+
 
     for (size_t j = 0; j < idx; j++) {
         free_word_counts(&per_words[j]);
@@ -261,29 +360,90 @@ static int handle_analyze(struct mg_connection *conn, void *cbdata) {
     free_aggregated_bigram_counts(&agg_bigrams);
 
     // Build JSON output
+    uint64_t runtime_ms = now_ms() - t0;
+
+    // Build JSON output (new schema)
     yyjson_mut_doc *odoc = yyjson_mut_doc_new(NULL);
     yyjson_mut_val *oroot = yyjson_mut_obj(odoc);
     yyjson_mut_doc_set_root(odoc, oroot);
 
-    yyjson_mut_val *j_words = yyjson_mut_arr(odoc);
+    // meta
+    yyjson_mut_val *meta = yyjson_mut_obj(odoc);
+    yyjson_mut_obj_add_int(odoc, meta, "pagesReceived", (long long)idx);
+    yyjson_mut_obj_add_int(odoc, meta, "charCount", (long long) total_chars);
+    yyjson_mut_obj_add_int(odoc, meta, "wordCount", (long long) total_wordCount);
+    yyjson_mut_obj_add_int(odoc, meta, "wordCharCount", (long long) total_wordCharCount);
+    yyjson_mut_obj_add_real(odoc, meta, "runtimeMs", runtime_ms);
+
+    // domain optional
+    yyjson_val *jdomain = yyjson_obj_get(root, "domain");
+    if (jdomain && yyjson_is_str(jdomain)) {
+        const char *d = yyjson_get_str(jdomain);
+        if (d) yyjson_mut_obj_add_strcpy(odoc, meta, "domain", d);
+    }
+
+    yyjson_mut_obj_add_val(odoc, oroot, "meta", meta);
+
+    // domainResult
+    yyjson_mut_val *domainResult = yyjson_mut_obj(odoc);
+
+    // words
+    yyjson_mut_val *words = yyjson_mut_arr(odoc);
     for (size_t i = 0; i < top_words.count; i++) {
         yyjson_mut_val *o = yyjson_mut_obj(odoc);
         yyjson_mut_obj_add_strcpy(odoc, o, "word", top_words.items[i].word ? top_words.items[i].word : "");
         yyjson_mut_obj_add_int(odoc, o, "count", (long long)top_words.items[i].count);
-        yyjson_mut_arr_add_val(j_words, o);
+        yyjson_mut_arr_add_val(words, o);
     }
+    yyjson_mut_obj_add_val(odoc, domainResult, "words", words);
 
-    yyjson_mut_obj_add_val(odoc, oroot, "top_words", j_words);
-
-    yyjson_mut_val *j_bi = yyjson_mut_arr(odoc);
+    // bigrams
+    yyjson_mut_val *bigrams = yyjson_mut_arr(odoc);
     for (size_t i = 0; i < top_bi.count; i++) {
         yyjson_mut_val *o = yyjson_mut_obj(odoc);
         yyjson_mut_obj_add_strcpy(odoc, o, "w1", top_bi.items[i].w1 ? top_bi.items[i].w1 : "");
         yyjson_mut_obj_add_strcpy(odoc, o, "w2", top_bi.items[i].w2 ? top_bi.items[i].w2 : "");
         yyjson_mut_obj_add_int(odoc, o, "count", (long long)top_bi.items[i].count);
-        yyjson_mut_arr_add_val(j_bi, o);
+        yyjson_mut_arr_add_val(bigrams, o);
     }
-    yyjson_mut_obj_add_val(odoc, oroot, "top_bigrams", j_bi);
+    yyjson_mut_obj_add_val(odoc, domainResult, "bigrams", bigrams);
+
+    yyjson_mut_obj_add_val(odoc, oroot, "domainResult", domainResult);
+    yyjson_mut_val *pageResults = yyjson_mut_arr(odoc);
+    for (size_t p = 0; p < idx; p++) {
+        yyjson_mut_val *po = yyjson_mut_obj(odoc);
+
+        yyjson_mut_obj_add_int(odoc, po, "id", page_ids[p]);
+        yyjson_mut_obj_add_strcpy(odoc, po, "name", page_names[p] ? page_names[p] : "");
+        yyjson_mut_obj_add_strcpy(odoc, po, "url",  page_urls[p]  ? page_urls[p]  : "");
+
+        yyjson_mut_obj_add_int(odoc, po, "charCount", (long long)page_charCounts[p]);
+        yyjson_mut_obj_add_int(odoc, po, "wordCount", (long long)page_wordCounts[p]);
+        yyjson_mut_obj_add_int(odoc, po, "wordCharCount", (long long)page_wordCharCounts[p]);
+
+        yyjson_mut_val *pwords = yyjson_mut_arr(odoc);
+        for (size_t i = 0; i < page_top_words[p].count; i++) {
+            yyjson_mut_val *o = yyjson_mut_obj(odoc);
+            yyjson_mut_obj_add_strcpy(odoc, o, "word", page_top_words[p].items[i].word ? page_top_words[p].items[i].word : "");
+            yyjson_mut_obj_add_int(odoc, o, "count", (long long)page_top_words[p].items[i].count);
+            yyjson_mut_arr_add_val(pwords, o);
+        }
+        yyjson_mut_obj_add_val(odoc, po, "words", pwords);
+
+        yyjson_mut_val *pbis = yyjson_mut_arr(odoc);
+        for (size_t i = 0; i < page_top_bi[p].count; i++) {
+            yyjson_mut_val *o = yyjson_mut_obj(odoc);
+            yyjson_mut_obj_add_strcpy(odoc, o, "w1", page_top_bi[p].items[i].w1 ? page_top_bi[p].items[i].w1 : "");
+            yyjson_mut_obj_add_strcpy(odoc, o, "w2", page_top_bi[p].items[i].w2 ? page_top_bi[p].items[i].w2 : "");
+            yyjson_mut_obj_add_int(odoc, o, "count", (long long)page_top_bi[p].items[i].count);
+            yyjson_mut_arr_add_val(pbis, o);
+        }
+        yyjson_mut_obj_add_val(odoc, po, "bigrams", pbis);
+
+        yyjson_mut_arr_add_val(pageResults, po);
+    }
+
+    yyjson_mut_obj_add_val(odoc, oroot, "pageResults", pageResults);
 
     const char *out_json = yyjson_mut_write(odoc, 0, NULL);
     if (!out_json) {
@@ -302,19 +462,28 @@ static int handle_analyze(struct mg_connection *conn, void *cbdata) {
     free_top_k_words(&top_words);
     free_top_k_bigrams(&top_bi);
 
+    for (size_t p = 0; p < idx; p++) {
+        free(page_names[p]);
+        free(page_urls[p]);
+        free_top_k_words(&page_top_words[p]);
+        free_top_k_bigrams(&page_top_bi[p]);
+    }
+
+    free(page_charCounts);
+    free(page_wordCounts);
+    free(page_wordCharCounts);
+    free(page_ids);
+    free(page_names);
+    free(page_urls);
+    free(page_top_words);
+    free(page_top_bi);
+
     free((void *)out_json);
     yyjson_mut_doc_free(odoc);
     yyjson_doc_free(doc);
     free(body);
     return 200;
 
-
-    free((void *)out_json);
-    yyjson_mut_doc_free(odoc);
-    yyjson_doc_free(doc);
-    free(body);
-
-    return 200;
 }
 
 int main(int argc, char **argv) {

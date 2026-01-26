@@ -1,0 +1,211 @@
+{
+  "domainResult": {
+    "bigrams": [
+      {
+        "count": 3,
+        "w1": "hallo",
+        "w2": "welt"
+      },
+      {
+        "count": 2,
+        "w1": "test",
+        "w2": "test"
+      },
+      {
+        "count": 2,
+        "w1": "welt",
+        "w2": "hallo"
+      },
+      {
+        "count": 1,
+        "w1": "apfel",
+        "w2": "apfel"
+      },
+      {
+        "count": 1,
+        "w1": "apfel",
+        "w2": "banane"
+      },
+      {
+        "count": 1,
+        "w1": "apfel",
+        "w2": "birne"
+      },
+      {
+        "count": 1,
+        "w1": "banane",
+        "w2": "apfel"
+      },
+      {
+        "count": 1,
+        "w1": "welt",
+        "w2": "okay"
+      }
+    ],
+    "words": [
+      {
+        "count": 4,
+        "word": "test"
+      },
+      {
+        "count": 3,
+        "word": "apfel"
+      },
+      {
+        "count": 3,
+        "word": "hallo"
+      },
+      {
+        "count": 3,
+        "word": "welt"
+      },
+      {
+        "count": 1,
+        "word": "banane"
+      },
+      {
+        "count": 1,
+        "word": "birne"
+      },
+      {
+        "count": 1,
+        "word": "okay"
+      }
+    ]
+  },
+  "meta": {
+    "charCount": 159,
+    "domain": "https://example.test",
+    "pagesReceived": 4,
+    "runtimeMs": 1,
+    "wordCharCount": 120,
+    "wordCount": 32
+  },
+  "pageResults": [
+    {
+      "bigrams": [
+        {
+          "count": 1,
+          "w1": "test",
+          "w2": "test"
+        }
+      ],
+      "charCount": 39,
+      "id": 1,
+      "name": "Testseite G1",
+      "url": "https://example.test/test-g1",
+      "wordCharCount": 29,
+      "wordCount": 9,
+      "words": [
+        {
+          "count": 2,
+          "word": "test"
+        }
+      ]
+    },
+    {
+      "bigrams": [
+        {
+          "count": 3,
+          "w1": "hallo",
+          "w2": "welt"
+        },
+        {
+          "count": 2,
+          "w1": "welt",
+          "w2": "hallo"
+        },
+        {
+          "count": 1,
+          "w1": "welt",
+          "w2": "okay"
+        }
+      ],
+      "charCount": 49,
+      "id": 2,
+      "name": "Testseite G2",
+      "url": "https://example.test/test-g2",
+      "wordCharCount": 33,
+      "wordCount": 8,
+      "words": [
+        {
+          "count": 3,
+          "word": "hallo"
+        },
+        {
+          "count": 3,
+          "word": "welt"
+        },
+        {
+          "count": 1,
+          "word": "okay"
+        }
+      ]
+    },
+    {
+      "bigrams": [
+        {
+          "count": 1,
+          "w1": "test",
+          "w2": "test"
+        }
+      ],
+      "charCount": 41,
+      "id": 3,
+      "name": "Testseite G3",
+      "url": "https://example.test/test-g3",
+      "wordCharCount": 32,
+      "wordCount": 10,
+      "words": [
+        {
+          "count": 2,
+          "word": "test"
+        }
+      ]
+    },
+    {
+      "bigrams": [
+        {
+          "count": 1,
+          "w1": "apfel",
+          "w2": "apfel"
+        },
+        {
+          "count": 1,
+          "w1": "apfel",
+          "w2": "banane"
+        },
+        {
+          "count": 1,
+          "w1": "apfel",
+          "w2": "birne"
+        },
+        {
+          "count": 1,
+          "w1": "banane",
+          "w2": "apfel"
+        }
+      ],
+      "charCount": 30,
+      "id": 4,
+      "name": "Testseite G4",
+      "url": "https://example.test/test-g4",
+      "wordCharCount": 26,
+      "wordCount": 5,
+      "words": [
+        {
+          "count": 3,
+          "word": "apfel"
+        },
+        {
+          "count": 1,
+          "word": "banane"
+        },
+        {
+          "count": 1,
+          "word": "birne"
+        }
+      ]
+    }
+  ]
+}

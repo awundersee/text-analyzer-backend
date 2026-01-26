@@ -32,18 +32,19 @@ target_include_directories(core PUBLIC
 enable_testing()
 
 add_executable(unit_tests
-  tests/test_tokenizer.c
-  tests/test_aggregate.c
-  tests/test_bigrams.c
-  tests/test_bigram_aggregate.c
-  tests/test_topk.c
+  tests/unit/test_tokenizer.c
+  tests/unit/test_aggregate.c
+  tests/unit/test_bigrams.c
+  tests/unit/test_bigram_aggregate.c
+  tests/unit/test_topk.c
   external/unity/src/unity.c
 )
 
 # Ensure runtime test data is available from the build directory
+file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/data)
 configure_file(
   ${CMAKE_CURRENT_SOURCE_DIR}/data/stopwords_de.txt
-  ${CMAKE_CURRENT_BINARY_DIR}/stopwords_de.txt
+  ${CMAKE_CURRENT_BINARY_DIR}/data/stopwords_de.txt
   COPYONLY
 )
 
@@ -54,7 +55,43 @@ target_include_directories(unit_tests PRIVATE
 
 target_link_libraries(unit_tests PRIVATE core)
 
-add_test(NAME unit_tests COMMAND unit_tests)
+add_test(NAME unit_tests COMMAND $<TARGET_FILE:unit_tests>)
+
+# ------------------------------------------------------------
+# Run unit tests automatically on build (portable single/multi-config)
+# ------------------------------------------------------------
+
+if(CMAKE_CONFIGURATION_TYPES) # Multi-config generator (Xcode, VS)
+  add_custom_target(run_unit_tests ALL
+    COMMAND ${CMAKE_CTEST_COMMAND} -C $<CONFIG> --output-on-failure
+    DEPENDS unit_tests
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    COMMENT "Running unit tests (ctest)"
+  )
+else() # Single-config generator (Unix Makefiles, Ninja)
+  add_custom_target(run_unit_tests ALL
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+    DEPENDS unit_tests
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    COMMENT "Running unit tests (ctest)"
+  )
+endif()
+
+# ------------------------------------------------------------
+# Manual targets: API tests / Performance tests (run on demand)
+# ------------------------------------------------------------
+
+add_custom_target(test_api
+  COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/api/scripts/run_api_tests.sh
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  COMMENT "Running API tests"
+)
+
+add_custom_target(test_perf
+  COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/performance/scripts/run_perf_tests.sh
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  COMMENT "Running performance tests (own implementation)"
+)
 
 # ------------------------------------------------------------
 # API Dependencies – [EXTERN] CivetWeb + [EXTERN] yyjson
@@ -102,4 +139,21 @@ target_link_libraries(api_server PRIVATE
   civetweb
   yyjson
   Threads::Threads
+)
+
+# ------------------------------------------------------------
+# CLI Executable (Algorithmus-Benchmark, ohne HTTP)
+# ------------------------------------------------------------
+add_executable(analyze_cli
+  src/cli/main.c
+  src/app/analyze.c
+)
+
+target_include_directories(analyze_cli PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+target_link_libraries(analyze_cli PRIVATE
+  core
+  yyjson
 )

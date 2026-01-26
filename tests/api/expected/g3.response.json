@@ -1,0 +1,48 @@
+{
+  "domainResult": {
+    "bigrams": [
+      {
+        "count": 1,
+        "w1": "test",
+        "w2": "test"
+      }
+    ],
+    "words": [
+      {
+        "count": 2,
+        "word": "test"
+      }
+    ]
+  },
+  "meta": {
+    "charCount": 41,
+    "domain": "https://example.test",
+    "pagesReceived": 1,
+    "runtimeMs": 0,
+    "wordCharCount": 32,
+    "wordCount": 10
+  },
+  "pageResults": [
+    {
+      "bigrams": [
+        {
+          "count": 1,
+          "w1": "test",
+          "w2": "test"
+        }
+      ],
+      "charCount": 41,
+      "id": 1,
+      "name": "Testseite",
+      "url": "https://example.test/test",
+      "wordCharCount": 32,
+      "wordCount": 10,
+      "words": [
+        {
+          "count": 2,
+          "word": "test"
+        }
+      ]
+    }
+  ]
+}

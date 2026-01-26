@@ -9,49 +9,37 @@ static int is_split_char(unsigned char c) {
     return isspace(c) || ispunct(c);
 }
 
-static size_t utf8_dash_len(const unsigned char *s) {
-    // Recognize common Unicode dashes encoded as UTF-8:
-    // — (U+2014) = E2 80 94
-    // – (U+2013) = E2 80 93
-    // ― (U+2015) = E2 80 95
-    if (!s) return 0;
+static size_t utf8_dash_len(const unsigned char *s, size_t remaining) {
+    if (!s || remaining < 3) return 0;
     if (s[0] == 0xE2 && s[1] == 0x80) {
         if (s[2] == 0x94 || s[2] == 0x93 || s[2] == 0x95) return 3;
     }
     return 0;
 }
 
-TokenList tokenize(const char *text) {
+TokenList tokenize_with_stats(const char *text, TokenStats *stats) {
     TokenList out = (TokenList){0};
+    if (stats) { stats->wordCount = 0; stats->wordCharCount = 0; }
     if (!text) return out;
 
     size_t len = strlen(text);
 
-    // First pass: count tokens
+    // 1) first pass: count tokens (wie bisher)
     size_t count = 0;
     size_t i = 0;
-
     while (i < len) {
-        // Skip splits (ASCII + UTF-8 dashes)
         while (i < len) {
-            size_t d = utf8_dash_len((const unsigned char *)&text[i]);
-            if (d > 0) {
-                i += d;
-            } else if (is_split_char((unsigned char)text[i])) {
-                i++;
-            } else {
-                break;
-            }
+            size_t d = utf8_dash_len((const unsigned char *)&text[i], len - i);
+            if (d > 0) i += d;
+            else if (is_split_char((unsigned char)text[i])) i++;
+            else break;
         }
-
         if (i >= len) break;
 
-        // Found start of a token
         count++;
 
-        // Consume token until next split (ASCII + UTF-8 dashes)
         while (i < len) {
-            size_t d = utf8_dash_len((const unsigned char *)&text[i]);
+            size_t d = utf8_dash_len((const unsigned char *)&text[i], len - i);
             if (d > 0) break;
             if (is_split_char((unsigned char)text[i])) break;
             i++;
@@ -61,36 +49,26 @@ TokenList tokenize(const char *text) {
     if (count == 0) return out;
 
     out.items = (char **)calloc(count, sizeof(char *));
-    if (!out.items) {
-        out.count = 0;
-        return out;
-    }
+    if (!out.items) return (TokenList){0};
     out.count = count;
 
-    // Second pass: extract tokens
+    // 2) second pass: extract tokens + stats
     i = 0;
     size_t ti = 0;
 
     while (i < len && ti < count) {
-        // Skip splits (ASCII + UTF-8 dashes)
         while (i < len) {
-            size_t d = utf8_dash_len((const unsigned char *)&text[i]);
-            if (d > 0) {
-                i += d;
-            } else if (is_split_char((unsigned char)text[i])) {
-                i++;
-            } else {
-                break;
-            }
+            size_t d = utf8_dash_len((const unsigned char *)&text[i], len - i);
+            if (d > 0) i += d;
+            else if (is_split_char((unsigned char)text[i])) i++;
+            else break;
         }
-
         if (i >= len) break;
 
         size_t start = i;
 
-        // Consume token until next split (ASCII + UTF-8 dashes)
         while (i < len) {
-            size_t d = utf8_dash_len((const unsigned char *)&text[i]);
+            size_t d = utf8_dash_len((const unsigned char *)&text[i], len - i);
             if (d > 0) break;
             if (is_split_char((unsigned char)text[i])) break;
             i++;
@@ -101,13 +79,11 @@ TokenList tokenize(const char *text) {
 
         char *tok = (char *)malloc(tlen + 1);
         if (!tok) {
-            // Clean up what we already allocated
             out.count = ti;
             free_tokens(&out);
             return (TokenList){0};
         }
 
-        // Copy + lowercase (ASCII A-Z)
         for (size_t k = 0; k < tlen; k++) {
             unsigned char c = (unsigned char)text[start + k];
             if (c >= 'A' && c <= 'Z') c = (unsigned char)(c - 'A' + 'a');
@@ -116,10 +92,19 @@ TokenList tokenize(const char *text) {
         tok[tlen] = '\0';
 
         out.items[ti++] = tok;
+
+        if (stats) {
+            stats->wordCount += 1;
+            stats->wordCharCount += tlen;
+        }
     }
 
     out.count = ti;
     return out;
+}
+
+TokenList tokenize(const char *text) {
+    return tokenize_with_stats(text, NULL);
 }
 
 void free_tokens(TokenList *list) {

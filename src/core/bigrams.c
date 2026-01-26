@@ -2,6 +2,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 
 static char *dup_cstr(const char *s) {
     if (!s) return NULL;
@@ -17,6 +18,14 @@ static int bigram_equals(const BigramCount *b, const char *w1, const char *w2) {
            strcmp(b->w1, w1) == 0 && strcmp(b->w2, w2) == 0;
 }
 
+static int is_all_digits(const char *s) {
+    if (!s || !*s) return 0;
+    for (; *s; s++) {
+        if (!isdigit((unsigned char)*s)) return 0;
+    }
+    return 1;
+}
+
 BigramCountList count_bigrams(const TokenList *tokens) {
     BigramCountList out = (BigramCountList){0};
     if (!tokens || !tokens->items || tokens->count < 2) return out;
@@ -29,6 +38,13 @@ BigramCountList count_bigrams(const TokenList *tokens) {
         const char *w1 = tokens->items[i];
         const char *w2 = tokens->items[i + 1];
         if (!w1 || !w2 || w1[0] == '\0' || w2[0] == '\0') continue;
+
+        // ✅ Extra Filter: zu kurze Tokens raus (z.B. "e")
+        if (strlen(w1) < 2 || strlen(w2) < 2) continue;
+
+        // ✅ Extra Filter: Zahlen-only Tokens raus (z.B. "6", "1", "2025")
+        if (is_all_digits(w1) || is_all_digits(w2)) continue;
+
 
         // linear search (good enough for now)
         size_t found = (size_t)-1;

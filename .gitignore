@@ -19,3 +19,20 @@ Thumbs.db
 
 # Temporary files
 *.log
+
+# Test results / benchmarks
+tests/**/results/
+touch tests/performance/results/.gitkeep
+
+# Performance outputs
+*.csv
+*.json.bak
+
+# Python virtual environment
+.venv/
+
+# MeTA (test-only)
+tests/performance/_build_meta/
+tests/performance/_meta_bin/
+tests/performance/_build_meta_ninja/
+tests/performance/_meta_bin_ninja/
