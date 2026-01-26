@@ -125,3 +125,11 @@ API_URL=http://localhost:8080 tests/api/scripts/regen_expected.sh
 ### Performance-Tests
 
 Die Performance-Tests werden manuell über den Konsolen-Aufruf `cmake --build build --target test_perf`aufgerufen.
+
+
+## Einrichtung
+
+Damit alles richtig verarbeitet wird, müssen die verwendeten Bibliotheken installiert werden. Erst dann kann der Docker-Container gestartet werden.
+
+```git submodule update --init --recursive```
+```docker-compose up -d --build```
