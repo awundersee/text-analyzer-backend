@@ -4,7 +4,7 @@ Backend-Komponente des Textanalyse-Tools zur wort- und wortpaarbasierten Analyse
 von Textinhalten aus Webseiten.
 
 Das Frontend der Anwendung ist über folgenden Link erreichbar:
-[wp-analyzer.wundersee.dev](https://wp-analyzer.wundersee.dev)
+[textanalyse.wundersee.dev](https://textanalyse.wundersee.dev)
 
 ## Ziel
 - Analyse von Textdaten (Wortfrequenzen, Wortpaare)
@@ -17,7 +17,6 @@ Das Frontend der Anwendung ist über folgenden Link erreichbar:
 Voraussetzungen:
 - C Compiler (gcc / clang)
 - CMake ≥ 3.16
-- Python 3 (für Performance-Vergleich mit MeTA, optional)
 
 ```bash
 cmake -S . -B build
@@ -59,17 +58,43 @@ für infrastrukturelle und unterstützende Aufgaben zu nutzen.
 Weitere Lizenz- und Herkunftsinformationen sind in der Datei `THIRD_PARTY_NOTICES.md`
 dokumentiert.
 
-### Python / MeTA (optional)
+## CLI Batch-Analyse
 
-Für den Performance-Vergleich mit MeTA wird eine **virtuelle Python-Umgebung** empfohlen.
+Die CLI unterstützt neben der Analyse einzelner JSON-Dateien auch einen **Batch-Modus**.
+Dabei werden alle JSON-Dateien in einem Eingabeordner verarbeitet und pro Datei ein vollständiges
+Analyse-Ergebnis als JSON erzeugt.
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+Im Projekt-Root wird folgende Struktur erwartet:
+
+```
+data/
+├─ batch_in/    # Eingabe: JSON-Requests
+└─ batch_out/   # Ausgabe: Analyse-Ergebnisse (*.result.json)
 ```
 
-Die virtuelle Umgebung (`.venv`) wird **nicht versioniert**, da sie systemabhängig ist.
+### Batch-Ausführung
+
+Aus dem Projekt-Root (`text-analyzer-backend/`):
+
+```bash
+./build/analyze_cli batch
+```
+
+Dabei werden alle `*.json` Dateien aus `data/batch_in` gelesen und die Ergebnisse nach
+`data/batch_out/<dateiname>.result.json` geschrieben.
+
+### Eigene Pfade angeben
+
+Alternativ können Ein- und Ausgabeverzeichnisse explizit gesetzt werden:
+
+```bash
+./build/analyze_cli batch --in data/batch_in --out data/batch_out
+```
+
+### Hinweis zum Output
+
+Der Batch-Modus erzeugt **vollständige Analyse-Ergebnisse** (kein Top-K-Limit).
+Die Top-K-Begrenzung wird ausschließlich für API- und UI-Ausgaben verwendet.
 
 ## API & Docker
 
@@ -125,7 +150,6 @@ API_URL=http://localhost:8080 tests/api/scripts/regen_expected.sh
 ### Performance-Tests
 
 Die Performance-Tests werden manuell über den Konsolen-Aufruf `cmake --build build --target test_perf`aufgerufen.
-
 
 ## Einrichtung
 
