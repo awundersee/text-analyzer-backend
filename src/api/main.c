@@ -183,13 +183,26 @@ static int handle_analyze(struct mg_connection *conn, void *cbdata) {
     }
 
     // options
-    bool include_bigrams = true;
-    bool per_page_results = true;
     yyjson_val *opt = yyjson_obj_get(root, "options");
+    bool include_bigrams = json_get_bool(opt, "includeBigrams", true);
+    bool per_page_results = json_get_bool(opt, "perPageResults", true);
+    app_pipeline_t pipeline = APP_PIPELINE_AUTO;
+
+    // optional: pipeline override from request options
     if (opt && yyjson_is_obj(opt)) {
-        include_bigrams = json_get_bool(opt, "includeBigrams", include_bigrams);
-        per_page_results = json_get_bool(opt, "perPageResults", per_page_results);
+        yyjson_val *p = yyjson_obj_get(opt, "pipeline");
+        if (p && yyjson_is_str(p)) {
+            const char *s = yyjson_get_str(p);
+            if (strcmp(s, "string") == 0) {
+                pipeline = APP_PIPELINE_STRING;
+            } else if (strcmp(s, "id") == 0) {
+                pipeline = APP_PIPELINE_ID;
+            } else {
+                pipeline = APP_PIPELINE_AUTO; // "auto" oder unbekannt
+            }
+        }
     }
+
 
     // k (TopK) – API default 20
     int k = 20;
@@ -246,7 +259,8 @@ static int handle_analyze(struct mg_connection *conn, void *cbdata) {
         .per_page_results = per_page_results,
         .stopwords_path   = cfg->stopwords_path,
         .top_k            = (size_t)k,   // API: TopK
-        .domain           = domain
+        .domain           = domain,
+        .pipeline         = pipeline,
     };
 
     app_analyze_result_t res = app_analyze_pages(pp, idx, &aopts);
