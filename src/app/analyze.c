@@ -1,5 +1,6 @@
 // src/app/analyze.c
 #include "app/analyze.h"
+#include "app/pipeline_id.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -15,6 +16,8 @@
 #include "view/topk.h"
 
 #include "yyjson.h"
+
+#define PIPELINE_THRESHOLD_CHARS (2u * 1024u * 1024u)  // 2 MB, Phase 2 Fixwert
 
 static double now_ms(void) {
 #if defined(CLOCK_MONOTONIC)
@@ -82,11 +85,17 @@ app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, 
     }
 
     size_t chars_received = 0;
+    for (size_t i = 0; i < n_pages; i++) {
+        const char *t = pages[i].text ? pages[i].text : "";
+        chars_received += strlen(t);
+    }
+
+    int use_id_pipeline = (chars_received >= PIPELINE_THRESHOLD_CHARS);
+
     double t0 = now_ms();
 
     for (size_t i = 0; i < n_pages; i++) {
         const char *t = pages[i].text ? pages[i].text : "";
-        chars_received += strlen(t);
 
         TokenList tokens = tokenize(t);
 
@@ -100,10 +109,28 @@ app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, 
             return fail(20, "Stopwords filter failed (file missing or invalid?)");
         }
 
-        page_words[i] = count_words(&tokens);
-        if (include_bigrams) {
-            page_bigrams[i] = count_bigrams(&tokens);
+        if (use_id_pipeline) {
+            int ok = analyze_id_pipeline(
+                &tokens,
+                include_bigrams,
+                &page_words[i],
+                include_bigrams ? &page_bigrams[i] : NULL
+            );
+            if (!ok) {
+                free_tokens(&tokens);
+                for (size_t k = 0; k < i; k++) free_word_counts(&page_words[k]);
+                if (include_bigrams) for (size_t k = 0; k < i; k++) free_bigram_counts(&page_bigrams[k]);
+                free(page_words);
+                free(page_bigrams);
+                return fail(30, "ID pipeline failed (out of memory?)");
+            }
+        } else {
+            page_words[i] = count_words(&tokens);
+            if (include_bigrams) {
+                page_bigrams[i] = count_bigrams(&tokens);
+            }
         }
+
 
         free_tokens(&tokens);
     }
@@ -139,6 +166,7 @@ app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, 
     yyjson_mut_obj_add_uint(resp, meta, "charsReceived", (uint64_t)chars_received);
     double runtime_ms = round3(t1 - t0);
     yyjson_mut_obj_add_real(resp, meta, "runtimeMs", runtime_ms);
+    yyjson_mut_obj_add_strcpy(resp, meta, "pipeline", use_id_pipeline ? "id" : "string");
     yyjson_mut_obj_add_val(resp, root, "meta", meta);
 
     yyjson_mut_val *domain = yyjson_mut_obj(resp);
