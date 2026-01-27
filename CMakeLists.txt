@@ -19,6 +19,10 @@ add_library(core
   src/core/aggregate.c
   src/core/bigrams.c
   src/core/bigram_aggregate.c
+
+  src/core/dict.c
+  src/core/id_freq.c
+  src/core/id_bigrams.c  
 )
 
 target_include_directories(core PUBLIC
@@ -56,6 +60,7 @@ target_include_directories(yyjson PUBLIC
 # ------------------------------------------------------------
 add_library(app STATIC 
   src/app/analyze.c
+  src/app/pipeline_id.c  
   )
 
 target_include_directories(app PUBLIC
