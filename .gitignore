@@ -20,9 +20,11 @@ Thumbs.db
 # Temporary files
 *.log
 
-# Test results / benchmarks
-tests/**/results/
-touch tests/performance/results/.gitkeep
+# Performance test results (generated)
+tests/performance/results/*
+
+# Keep results directory structure
+!tests/performance/results/.gitkeep
 
 # Performance outputs
 *.csv
@@ -36,3 +38,11 @@ tests/performance/_build_meta/
 tests/performance/_meta_bin/
 tests/performance/_build_meta_ninja/
 tests/performance/_meta_bin_ninja/
+
+# Batch CLI data (runtime only)
+data/batch_in/*
+data/batch_out/*
+
+# Keep directories
+!data/batch_in/.gitkeep
+!data/batch_out/.gitkeep
