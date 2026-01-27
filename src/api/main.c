@@ -184,7 +184,7 @@ static int handle_analyze(struct mg_connection *conn, void *cbdata) {
 
     // options
     bool include_bigrams = true;
-    bool per_page_results = false;
+    bool per_page_results = true;
     yyjson_val *opt = yyjson_obj_get(root, "options");
     if (opt && yyjson_is_obj(opt)) {
         include_bigrams = json_get_bool(opt, "includeBigrams", include_bigrams);
