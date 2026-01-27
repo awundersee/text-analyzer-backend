@@ -11,6 +11,7 @@
 // Create it by extracting the core "analyze request -> response json" logic
 // from src/api/main.c into a shared module, e.g. src/app/analyze.c/.h.
 #include "app/analyze.h"   // <- you will create this (see notes below)
+#include "cli/batch.h"
 
 /* ------------------------------------------------------------
  * Helpers
@@ -66,74 +67,102 @@ static bool json_get_bool(yyjson_val *obj, const char *key, bool fallback) {
  *  B) { "pages": [{ "text": "..." }, ...], "options": {...} }
  * ------------------------------------------------------------ */
 typedef struct {
-    const char **texts;     // pointers into yyjson doc memory (valid while doc lives)
+    app_page_t *pages;        // malloc'd array
     size_t count;
+    const char *domain;       // pointer into yyjson doc (ok while doc lives)
     bool include_bigrams;
     bool per_page_results;
 } cli_input_t;
 
 static cli_input_t parse_input(yyjson_doc *doc) {
     yyjson_val *root = yyjson_doc_get_root(doc);
-    if (!yyjson_is_obj(root)) die("Root must be a JSON object");
 
     cli_input_t in = {0};
     in.include_bigrams = true;
     in.per_page_results = false;
+    in.domain = NULL;
 
-    // options (optional)
-    yyjson_val *opt = yyjson_obj_get(root, "options");
-    if (opt && yyjson_is_obj(opt)) {
-        in.include_bigrams = json_get_bool(opt, "includeBigrams", in.include_bigrams);
-        in.per_page_results = json_get_bool(opt, "perPageResults", in.per_page_results);
-    }
+    yyjson_val *pages = NULL;
 
-    // Prefer "texts" (perf format)
-    yyjson_val *texts = yyjson_obj_get(root, "texts");
-    if (texts && yyjson_is_arr(texts)) {
-        size_t n = yyjson_arr_size(texts);
-        if (n == 0) die("'texts' must not be empty");
+    if (yyjson_is_obj(root)) {
+        // domain (optional)
+        yyjson_val *d = yyjson_obj_get(root, "domain");
+        if (d && yyjson_is_str(d)) in.domain = yyjson_get_str(d);
 
-        in.texts = (const char **)calloc(n, sizeof(const char *));
-        if (!in.texts) die("Out of memory");
-
-        size_t idx = 0;
-        yyjson_val *it;
-        yyjson_arr_iter iter = yyjson_arr_iter_with(texts);
-        while ((it = yyjson_arr_iter_next(&iter))) {
-            if (!yyjson_is_str(it)) die("'texts' must be an array of strings");
-            in.texts[idx++] = yyjson_get_str(it);
+        // options (optional)
+        yyjson_val *opt = yyjson_obj_get(root, "options");
+        if (opt && yyjson_is_obj(opt)) {
+            in.include_bigrams = json_get_bool(opt, "includeBigrams", in.include_bigrams);
+            in.per_page_results = json_get_bool(opt, "perPageResults", in.per_page_results);
         }
-        in.count = n;
-        return in;
+
+        pages = yyjson_obj_get(root, "pages");
+        if (!pages || !yyjson_is_arr(pages)) die("Input must contain 'pages'[]");
+    } else if (yyjson_is_arr(root)) {
+        // allow bare array of pages (test files)
+        pages = root;
+    } else {
+        die("Root must be an object (with pages) or an array (pages)");
     }
 
-    // Otherwise: pages[].text (frontend format)
-    yyjson_val *pages = yyjson_obj_get(root, "pages");
-    if (pages && yyjson_is_arr(pages)) {
-        size_t n = yyjson_arr_size(pages);
-        if (n == 0) die("'pages' must not be empty");
+    size_t n = yyjson_arr_size(pages);
+    if (n == 0) die("'pages' must not be empty");
 
-        in.texts = (const char **)calloc(n, sizeof(const char *));
-        if (!in.texts) die("Out of memory");
+    in.pages = (app_page_t *)calloc(n, sizeof(app_page_t));
+    if (!in.pages) die("Out of memory");
 
-        size_t idx = 0;
-        yyjson_val *p;
-        yyjson_arr_iter iter = yyjson_arr_iter_with(pages);
-        while ((p = yyjson_arr_iter_next(&iter))) {
-            if (!yyjson_is_obj(p)) die("'pages' must be an array of objects");
-            yyjson_val *t = yyjson_obj_get(p, "text");
-            if (!t || !yyjson_is_str(t)) die("each page must contain a string field 'text'");
-            in.texts[idx++] = yyjson_get_str(t);
-        }
-        in.count = n;
-        return in;
+    size_t idx = 0;
+    yyjson_val *p;
+    yyjson_arr_iter iter = yyjson_arr_iter_with(pages);
+    while ((p = yyjson_arr_iter_next(&iter))) {
+        if (!yyjson_is_obj(p)) die("'pages' must be an array of objects");
+
+        yyjson_val *t = yyjson_obj_get(p, "text");
+        if (!t || !yyjson_is_str(t)) die("each page must contain a string field 'text'");
+
+        yyjson_val *jid   = yyjson_obj_get(p, "id");
+        yyjson_val *jname = yyjson_obj_get(p, "name");
+        yyjson_val *jurl  = yyjson_obj_get(p, "url");
+
+        in.pages[idx].id   = (jid && yyjson_is_int(jid)) ? (long long)yyjson_get_sint(jid) : 0;
+        in.pages[idx].name = (jname && yyjson_is_str(jname)) ? yyjson_get_str(jname) : NULL;
+        in.pages[idx].url  = (jurl && yyjson_is_str(jurl)) ? yyjson_get_str(jurl) : NULL;
+        in.pages[idx].text = yyjson_get_str(t);
+
+        idx++;
     }
 
-    die("Input must contain either 'texts'[] or 'pages'[] with 'text' fields");
-    return in; // unreachable
+    in.count = n;
+    return in;
 }
 
 int main(int argc, char **argv) {
+
+    // Subcommand: batch
+    if (argc >= 2 && strcmp(argv[1], "batch") == 0) {
+        const char *in_dir  = "data/batch_in";
+        const char *out_dir = "data/batch_out";
+        int cont = 1; // default: continue on error
+
+        // optional simple args:
+        // --in <dir> --out <dir> --no-continue
+        for (int i = 2; i < argc; i++) {
+            if (strcmp(argv[i], "--in") == 0 && i + 1 < argc) {
+                in_dir = argv[++i];
+            } else if (strcmp(argv[i], "--out") == 0 && i + 1 < argc) {
+                out_dir = argv[++i];
+            } else if (strcmp(argv[i], "--no-continue") == 0) {
+                cont = 0;
+            } else {
+                fprintf(stderr, "Unknown arg: %s\n", argv[i]);
+                fprintf(stderr, "Usage: %s batch [--in dir] [--out dir] [--no-continue]\n", argv[0]);
+                return 2;
+            }
+        }
+
+        return cli_run_batch(in_dir, out_dir, cont);
+    }
+
     if (argc < 2) {
         fprintf(stderr, "Usage: %s <input.json> [--out output.json]\n", argv[0]);
         return 2;
@@ -167,14 +196,18 @@ int main(int argc, char **argv) {
     // app_analyze_texts should:
     // - run the SAME pipeline as /analyze
     // - return a yyjson_mut_doc* response (or NULL on error)
+    const char *sw = getenv("STOPWORDS_FILE");
+    if (!sw) sw = "data/stopwords_de.txt";
+
     app_analyze_opts_t opts = {
-    .include_bigrams = in.include_bigrams,
-    .per_page_results = in.per_page_results,
-    .stopwords_path = "data/stopwords_de.txt",
-    .top_k = 10
+    .include_bigrams   = in.include_bigrams,
+    .per_page_results  = in.per_page_results,
+    .stopwords_path    = sw,
+    .top_k             = 0,          // CLI: FULL
+    .domain            = in.domain   // optional
     };
 
-    app_analyze_result_t res = app_analyze_texts(in.texts, in.count, &opts);
+    app_analyze_result_t res = app_analyze_pages(in.pages, in.count, &opts);
 
     double t1 = now_ms();
 
@@ -182,12 +215,12 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Analysis failed: status=%d message=%s\n",
                 res.status, res.message ? res.message : "(no message)");
         yyjson_doc_free(doc);
-        free(in.texts);
+        free(in.pages);
         return 4;
     }
 
     // Print runtime to stdout (useful for perf scripts)
-    fprintf(stdout, "runtime_ms=%.3f\n", (t1 - t0));
+    fprintf(stderr, "runtime_ms=%.3f\n", (t1 - t0));
 
     // Optional: write response JSON
     if (out_path && res.response_doc) {
@@ -213,7 +246,7 @@ int main(int argc, char **argv) {
     // cleanup
     if (res.response_doc) yyjson_mut_doc_free(res.response_doc);
     yyjson_doc_free(doc);
-    free(in.texts);
+    free(in.pages);
 
     return 0;
 }
