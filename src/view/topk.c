@@ -1,4 +1,4 @@
-#include "core/topk.h"
+#include "view/topk.h"
 
 #include <stdlib.h>
 #include <string.h>

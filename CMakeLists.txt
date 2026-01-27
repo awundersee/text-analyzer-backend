@@ -19,11 +19,53 @@ add_library(core
   src/core/aggregate.c
   src/core/bigrams.c
   src/core/bigram_aggregate.c
-  src/core/topk.c
 )
 
 target_include_directories(core PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+# ------------------------------------------------------------
+# View-Filter (Eigenentwicklung)
+# ------------------------------------------------------------
+
+add_library(view
+  src/view/topk.c
+)
+
+target_include_directories(view PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+target_link_libraries(view PUBLIC core)
+
+# ------------------------------------------------------------
+# yyjson ergänzen
+# ------------------------------------------------------------
+
+add_library(yyjson
+  external/yyjson/src/yyjson.c
+)
+
+target_include_directories(yyjson PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/external/yyjson/src
+)
+
+# ------------------------------------------------------------
+# App Layer (Analyse-Orchestrierung)
+# ------------------------------------------------------------
+add_library(app STATIC 
+  src/app/analyze.c
+  )
+
+target_include_directories(app PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+target_link_libraries(app PUBLIC
+  core
+  view
+  yyjson
 )
 
 # ------------------------------------------------------------
@@ -53,7 +95,7 @@ target_include_directories(unit_tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_link_libraries(unit_tests PRIVATE core)
+target_link_libraries(unit_tests PRIVATE view)
 
 add_test(NAME unit_tests COMMAND $<TARGET_FILE:unit_tests>)
 
@@ -90,7 +132,7 @@ add_custom_target(test_api
 add_custom_target(test_perf
   COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/performance/scripts/run_perf_tests.sh
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-  COMMENT "Running performance tests (own implementation)"
+  COMMENT "Running performance tests"
 )
 
 # ------------------------------------------------------------
@@ -113,15 +155,6 @@ target_compile_definitions(civetweb PRIVATE NO_SSL)
 
 target_link_libraries(civetweb PUBLIC Threads::Threads)
 
-
-add_library(yyjson
-  external/yyjson/src/yyjson.c
-)
-
-target_include_directories(yyjson PUBLIC
-  ${CMAKE_CURRENT_SOURCE_DIR}/external/yyjson/src
-)
-
 # ------------------------------------------------------------
 # API Executable
 # ------------------------------------------------------------
@@ -135,10 +168,10 @@ target_include_directories(api_server PRIVATE
 )
 
 target_link_libraries(api_server PRIVATE
-  core
+  app
   civetweb
-  yyjson
   Threads::Threads
+  m
 )
 
 # ------------------------------------------------------------
@@ -146,7 +179,7 @@ target_link_libraries(api_server PRIVATE
 # ------------------------------------------------------------
 add_executable(analyze_cli
   src/cli/main.c
-  src/app/analyze.c
+  src/cli/batch.c
 )
 
 target_include_directories(analyze_cli PRIVATE
@@ -154,6 +187,6 @@ target_include_directories(analyze_cli PRIVATE
 )
 
 target_link_libraries(analyze_cli PRIVATE
-  core
-  yyjson
+  app
+  m
 )

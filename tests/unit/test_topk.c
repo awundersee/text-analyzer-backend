@@ -2,7 +2,7 @@
 
 #include "core/freq.h"
 #include "core/bigrams.h"
-#include "core/topk.h"
+#include "view/topk.h"
 
 void test_topk_words_order_and_truncate(void) {
     WordCount items[] = {
