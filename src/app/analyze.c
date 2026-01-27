@@ -91,6 +91,10 @@ app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, 
     }
 
     int use_id_pipeline = (chars_received >= PIPELINE_THRESHOLD_CHARS);
+    if (opts) {
+        if (opts->pipeline == APP_PIPELINE_STRING) use_id_pipeline = 0;
+        else if (opts->pipeline == APP_PIPELINE_ID) use_id_pipeline = 1;
+    }
 
     double t0 = now_ms();
 

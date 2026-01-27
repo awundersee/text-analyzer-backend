@@ -4,6 +4,12 @@
 #include <stddef.h>   // size_t
 #include "yyjson.h"
 
+typedef enum {
+  APP_PIPELINE_AUTO = 0,
+  APP_PIPELINE_STRING = 1,
+  APP_PIPELINE_ID = 2
+} app_pipeline_t;
+
 typedef struct {
     long long id;       // optional
     const char *name;   // optional
@@ -17,6 +23,7 @@ typedef struct {
     const char *stopwords_path;
     size_t top_k;       // 0 = FULL, >0 = TopK
     const char *domain; // optional
+    app_pipeline_t pipeline;
 } app_analyze_opts_t;
 
 typedef struct {

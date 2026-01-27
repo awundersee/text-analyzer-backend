@@ -143,6 +143,12 @@ add_custom_target(test_perf
   COMMENT "Running performance tests"
 )
 
+add_custom_target(test_perf_pipeline
+  COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/performance/scripts/run_perf_tests_dual_pipelines.sh
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  COMMENT "Running pipeline performance tests"
+)
+
 # ------------------------------------------------------------
 # API Dependencies – [EXTERN] CivetWeb + [EXTERN] yyjson
 # ------------------------------------------------------------

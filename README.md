@@ -3,68 +3,114 @@
 Backend-Komponente des Textanalyse-Tools zur wort- und wortpaarbasierten Analyse
 von Textinhalten aus Webseiten.
 
-Das Frontend der Anwendung ist über folgenden Link erreichbar:
+Das Frontend der Anwendung ist erreichbar unter:
 [textanalyse.wundersee.dev](https://textanalyse.wundersee.dev)
 
-## Ziel
-- Analyse von Textdaten (Wortfrequenzen, Wortpaare)
-- Implementierung in **C**
-- **Testgetriebene Entwicklung (TDD)**
-- Containerisierte Ausführung mit **Docker**
-- Klare Trennung zwischen Analyse-Logik (Core) und API-Schicht
+---
+
+## Zielsetzung
+
+Ziel dieses Projekts ist die Entwicklung eines performanten, robusten und modularen
+Textanalyse-Backends in **C**, das sowohl über eine CLI als auch über eine HTTP-API
+angesprochen werden kann.
+
+Schwerpunkte des Projekts sind:
+
+* Analyse von Textdaten (Wortfrequenzen, Wortpaare / Bigrams)
+* Implementierung der Kernlogik in **C**
+* **Testgetriebene Entwicklung (TDD)**
+* Klare Trennung zwischen Analyse-Core und API-Schicht
+* Vergleich und Bewertung unterschiedlicher Analyse-Pipelines
+* Containerisierte Ausführung mit **Docker**
+
+---
+
+## Architektur & Analyse-Pipelines
+
+Die Textanalyse ist in zwei unterschiedliche Pipelines unterteilt, die je nach
+Eingabedaten und Anwendungsfall eingesetzt werden:
+
+### String-basierte Pipeline
+
+* Direkte Verarbeitung der Texte als Strings
+* Tokenisierung, Stoppwortfilterung und Aggregation erfolgen unmittelbar auf
+  String-Ebene
+* Vorteil: geringe Komplexität, geringer Overhead bei kleinen bis mittleren
+  Textmengen
+* Nachteil: höherer Speicherbedarf bei großen Datenmengen durch redundante Strings
+
+### ID-basierte Pipeline
+
+* Tokens werden frühzeitig auf numerische IDs abgebildet
+* Interne Verarbeitung (Zählung, Aggregation, Sortierung) erfolgt ausschließlich
+  auf ID-Basis
+* Vorteil: deutlich geringerer Speicherverbrauch und bessere Skalierbarkeit
+* Nachteil: höherer Initialaufwand (Mapping / Lookup)
+
+Beide Pipelines liefern **funktional identische Ergebnisse** und werden ausschließlich
+intern unterschieden. Die Auswahl der Pipeline erfolgt deterministisch anhand
+vordefinierter Kriterien (z. B. Eingabegröße / Seitenanzahl).
+
+---
 
 ## Build & Tests
-Voraussetzungen:
-- C Compiler (gcc / clang)
-- CMake ≥ 3.16
+
+### Voraussetzungen
+
+* C Compiler (gcc oder clang)
+* CMake ≥ 3.16
+
+### Build
 
 ```bash
 cmake -S . -B build
 cmake --build build
+```
+
+### Tests ausführen
+
+```bash
 ctest --test-dir build
 ```
 
+---
+
 ## Externe Abhängigkeiten
 
-Für die API-, Infrastruktur- und Test-Schicht werden bewusst etablierte,
-permissiv lizenzierte Open-Source-Bibliotheken eingesetzt. Diese Komponenten
-werden **nicht** für die eigentliche Textanalyse verwendet, sondern ausschließlich
-für technische Aufgaben wie HTTP-Kommunikation, JSON-Verarbeitung und automatisierte Tests.
+Für API-, Infrastruktur- und Test-Schichten werden bewusst etablierte,
+permissiv lizenzierte Open-Source-Bibliotheken eingesetzt. Diese Abhängigkeiten
+werden **nicht** für die eigentliche Textanalyse verwendet.
 
-Die Kernlogik der Textanalyse (Tokenisierung, Stoppwortfilterung, Wort- und Wortpaaranalyse,
-Aggregation sowie Top-K-Auswahl) wurde vollständig eigenständig implementiert und
-testgetrieben entwickelt.
+Die Kernlogik (Tokenisierung, Stoppwortfilterung, Wort- und Bigram-Analyse,
+Aggregation, Sortierung, Top-K-Auswahl) wurde vollständig eigenständig
+implementiert und testgetrieben entwickelt.
 
 ### Verwendete Bibliotheken
 
-- **CivetWeb** (MIT-Lizenz)  
-  Eingesetzt als eingebetteter HTTP-Server für die API-Schicht.  
-  Die Bibliothek ist weit verbreitet, stabil und auf Performance optimiert.
+* **CivetWeb** (MIT)
 
-- **yyjson** (MIT-Lizenz)  
-  Eingesetzt für das Parsen und Serialisieren von JSON-Daten.  
-  yyjson ist eine sehr performante JSON-Bibliothek in C und wird ausschließlich
-  für die Ein- und Ausgabe der API verwendet.
+  * Eingebetteter HTTP-Server für die API-Schicht
 
-- **Unity Test Framework** (MIT-Lizenz)  
-  Eingesetzt für automatisierte Unit-Tests im Rahmen der testgetriebenen Entwicklung (TDD).  
-  Unity ermöglicht strukturierte, reproduzierbare Tests der Analyse-Komponenten
-  und wird ausschließlich in der Testumgebung verwendet (keine Laufzeitabhängigkeit).
+* **yyjson** (MIT)
 
-Die Verwendung dieser Bibliotheken erfolgt bewusst, um sich im Projekt auf die Entwicklung
-und Optimierung der Analysealgorithmen zu konzentrieren und bewährte, gut getestete Lösungen
-für infrastrukturelle und unterstützende Aufgaben zu nutzen.
+  * Performantes JSON Parsing und Serialisierung
 
-Weitere Lizenz- und Herkunftsinformationen sind in der Datei `THIRD_PARTY_NOTICES.md`
+* **Unity Test Framework** (MIT)
+
+  * Unit-Tests im Rahmen der TDD-Strategie
+  * Nur in der Testumgebung eingesetzt
+
+Weitere Lizenz- und Herkunftsinformationen sind in `THIRD_PARTY_NOTICES.md`
 dokumentiert.
+
+---
 
 ## CLI Batch-Analyse
 
-Die CLI unterstützt neben der Analyse einzelner JSON-Dateien auch einen **Batch-Modus**.
-Dabei werden alle JSON-Dateien in einem Eingabeordner verarbeitet und pro Datei ein vollständiges
-Analyse-Ergebnis als JSON erzeugt.
+Die CLI unterstützt neben der Analyse einzelner JSON-Dateien auch einen
+**Batch-Modus**.
 
-Im Projekt-Root wird folgende Struktur erwartet:
+Erwartete Projektstruktur:
 
 ```
 data/
@@ -74,86 +120,97 @@ data/
 
 ### Batch-Ausführung
 
-Aus dem Projekt-Root (`text-analyzer-backend/`):
-
 ```bash
 ./build/analyze_cli batch
 ```
 
-Dabei werden alle `*.json` Dateien aus `data/batch_in` gelesen und die Ergebnisse nach
-`data/batch_out/<dateiname>.result.json` geschrieben.
-
-### Eigene Pfade angeben
-
-Alternativ können Ein- und Ausgabeverzeichnisse explizit gesetzt werden:
+Alternativ mit expliziten Pfaden:
 
 ```bash
 ./build/analyze_cli batch --in data/batch_in --out data/batch_out
 ```
 
-### Hinweis zum Output
+### Hinweis
 
-Der Batch-Modus erzeugt **vollständige Analyse-Ergebnisse** (kein Top-K-Limit).
+Der Batch-Modus erzeugt **vollständige Analyse-Ergebnisse ohne Top-K-Limit**.
 Die Top-K-Begrenzung wird ausschließlich für API- und UI-Ausgaben verwendet.
-
-## API & Docker
-
-### API
-
-Die Analysefunktionalität wird über eine schlanke HTTP-API bereitgestellt.  
-Die API fungiert ausschließlich als Schnittstelle und ruft die im Core implementierte
-Analyse-Logik auf.
-
-Der Server stellt aktuell folgende Endpunkte bereit:
-
-- `GET /health`  
-  Einfacher Health-Check zur Überprüfung der Erreichbarkeit.
-
-- `POST /analyze`  
-  Führt eine Textanalyse durch und liefert die Top-K-Wörter sowie Wortpaare (Bigrams).
-
-Die API erwartet ein JSON-Objekt mit einer Liste von Texten sowie optional der gewünschten
-Anzahl der Top-Ergebnisse.
 
 ---
 
-### Docker
+## API
 
-Das Backend kann vollständig containerisiert ausgeführt werden.  
-Das Docker-Setup verwendet ein Multi-Stage-Build, sodass das finale Image ausschließlich
-das kompilierte API-Binary und notwendige Laufzeitdateien enthält.
+Die HTTP-API dient ausschließlich als dünne Schnittstelle zur Analyse-Logik.
 
-Die Anwendung wird im Container als eigenständiger HTTP-Service betrieben und kann
-lokal oder auf einem Server über Port `8080` angesprochen werden.
+### Endpunkte
 
-Zur Optimierung des Docker-Build-Kontexts wird eine `.dockerignore`-Datei verwendet,
-die Build-Artefakte und Versionsverwaltungsdaten ausschließt.
+* `GET /health`
 
+  * Health-Check zur Überprüfung der Erreichbarkeit
 
-## Tests
+* `POST /analyze`
+
+  * Führt eine Textanalyse durch
+  * Liefert Top-K-Wörter und Bigrams
+
+Die API validiert eingehende Requests strikt (JSON-Schema, Datentypen,
+Grenzwerte) und antwortet bei Fehlern deterministisch mit geeigneten
+HTTP-Statuscodes.
+
+---
+
+## Docker
+
+Das Backend kann vollständig containerisiert betrieben werden.
+
+* Multi-Stage-Build für minimale Image-Größe
+* Finales Image enthält ausschließlich das kompilierte API-Binary
+* Standard-Port: `8080`
+
+```bash
+docker-compose up -d --build
+```
+
+Eine `.dockerignore`-Datei reduziert den Build-Kontext auf notwendige Dateien.
+
+---
+
+## Teststrategie
 
 ### Unit-Tests
 
-Die Unit-Tests sind so integriert, dass sie vor jedem Build-Prozess gestartet werden, um nach Änderungen zu prüfen, ob alle Komponenten noch funktionieren. Die Testfälle liegen im Ordner `./tests/unit`.
+* Testgetriebene Entwicklung der Analyse-Komponenten
+* Tests liegen unter `tests/unit`
+* Fokus auf deterministische und reproduzierbare Ergebnisse
 
 ### API-Tests
 
-Die API-Tests laufen automatisch bei GitHub Actions, um bei Änderungen sicherzustellen, dass die API läuft. Wenn sie lokal getestet werden soll, ist das über den Konsolen-Aufruf `cmake --build build --target test_api`möglich.
+* Automatisierte Tests der HTTP-Schnittstelle
+* Ausführung über GitHub Actions
+* Lokal testbar über:
 
-Bei Anpassungen der json-API-Testdateien können mit folgendem Aufruf die erwarteten Werte neu erzeugt werden.
+```bash
+cmake --build build --target test_api
+```
+
+Bei Änderungen an API-Testdaten können die erwarteten Ergebnisse neu erzeugt werden:
 
 ```bash
 chmod +x tests/api/scripts/regen_expected.sh
 API_URL=http://localhost:8080 tests/api/scripts/regen_expected.sh
 ```
 
-### Performance-Tests
-
-Die Performance-Tests werden manuell über den Konsolen-Aufruf `cmake --build build --target test_perf`aufgerufen.
+---
 
 ## Einrichtung
 
-Damit alles richtig verarbeitet wird, müssen die verwendeten Bibliotheken installiert werden. Erst dann kann der Docker-Container gestartet werden.
+Initiale Einrichtung der Submodule und Abhängigkeiten:
 
-```git submodule update --init --recursive```
-```docker-compose up -d --build```
+```bash
+git submodule update --init --recursive
+```
+
+Start des Backends im Docker-Container:
+
+```bash
+docker-compose up -d --build
+```
