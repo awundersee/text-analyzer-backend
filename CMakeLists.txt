@@ -101,7 +101,9 @@ target_include_directories(unit_tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_link_libraries(unit_tests PRIVATE view)
+target_link_libraries(unit_tests PRIVATE
+  app
+)
 
 add_test(NAME unit_tests COMMAND $<TARGET_FILE:unit_tests>)
 
