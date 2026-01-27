@@ -14,6 +14,7 @@
 #include "core/aggregate.h"
 #include "core/bigram_aggregate.h"
 #include "view/topk.h"
+#include "core/metrics.h"
 
 #include "yyjson.h"
 
@@ -171,6 +172,7 @@ app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, 
     double runtime_ms = round3(t1 - t0);
     yyjson_mut_obj_add_real(resp, meta, "runtimeMs", runtime_ms);
     yyjson_mut_obj_add_strcpy(resp, meta, "pipeline", use_id_pipeline ? "id" : "string");
+    yyjson_mut_obj_add_uint(odoc, meta, "peakRssKiB", ta_peak_rss_kib());
     yyjson_mut_obj_add_val(resp, root, "meta", meta);
 
     yyjson_mut_val *domain = yyjson_mut_obj(resp);
