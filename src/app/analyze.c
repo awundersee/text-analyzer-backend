@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <math.h>
+#include <stdio.h>
 
 #include "core/tokenizer.h"
 #include "core/stopwords.h"
@@ -48,7 +49,6 @@ static void json_add_word_list(yyjson_mut_doc *doc, yyjson_mut_val *arr, const W
     }
 }
 
-
 static void json_add_bigram_list(yyjson_mut_doc *doc, yyjson_mut_val *arr, const BigramCountList *list) {
     for (size_t i = 0; i < list->count; i++) {
         yyjson_mut_val *obj = yyjson_mut_obj(doc);
@@ -63,6 +63,16 @@ static void json_add_bigram_list(yyjson_mut_doc *doc, yyjson_mut_val *arr, const
 
 static inline double round3(double v) {
     return round(v * 1000.0) / 1000.0;
+}
+
+static const char* pipeline_requested_str(const app_analyze_opts_t *opts) {
+    if (!opts) return "auto";
+    switch (opts->pipeline) {
+        case APP_PIPELINE_STRING: return "string";
+        case APP_PIPELINE_ID:     return "id";
+        case APP_PIPELINE_AUTO:
+        default:                  return "auto";
+    }
 }
 
 app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, const app_analyze_opts_t *opts) {
@@ -171,8 +181,15 @@ app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, 
     yyjson_mut_obj_add_uint(resp, meta, "charsReceived", (uint64_t)chars_received);
     double runtime_ms = round3(t1 - t0);
     yyjson_mut_obj_add_real(resp, meta, "runtimeMs", runtime_ms);
-    yyjson_mut_obj_add_strcpy(resp, meta, "pipeline", use_id_pipeline ? "id" : "string");
-    yyjson_mut_obj_add_uint(odoc, meta, "peakRssKiB", ta_peak_rss_kib());
+
+    const char *req = pipeline_requested_str(opts);
+    const char *used = use_id_pipeline ? "id" : "string";
+    yyjson_mut_obj_add_strcpy(resp, meta, "pipelineRequested", req);
+    yyjson_mut_obj_add_strcpy(resp, meta, "pipelineUsed", used);
+    yyjson_mut_obj_add_strcpy(resp, meta, "pipeline", used);
+
+    yyjson_mut_obj_add_uint(resp, meta, "peakRssKiB", ta_peak_rss_kib());
+
     yyjson_mut_obj_add_val(resp, root, "meta", meta);
 
     yyjson_mut_val *domain = yyjson_mut_obj(resp);

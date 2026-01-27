@@ -86,6 +86,7 @@ add_executable(unit_tests
   tests/unit/test_bigram_aggregate.c
   tests/unit/test_topk.c
   tests/unit/test_pipeline_parity.c
+  tests/unit/test_pipeline_force.c
   external/unity/src/unity.c
 )
 
