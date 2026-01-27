@@ -88,6 +88,12 @@ void test_bigram_aggregate_basic(void);
 void test_topk_words_order_and_truncate(void);
 void test_topk_bigrams_order_and_truncate(void);
 
+void test_parity_g1_short(void);
+void test_parity_g2_punct(void);
+void test_parity_g3_stopwords(void);
+void test_parity_g4_repetitions(void);
+void test_parity_g5_multi_page_like(void);
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_tokenizer_g1_hallo_welt);
@@ -101,5 +107,10 @@ int main(void) {
     RUN_TEST(test_bigram_aggregate_basic);
     RUN_TEST(test_topk_words_order_and_truncate);
     RUN_TEST(test_topk_bigrams_order_and_truncate);
+    RUN_TEST(test_parity_g1_short);
+    RUN_TEST(test_parity_g2_punct);
+    RUN_TEST(test_parity_g3_stopwords);
+    RUN_TEST(test_parity_g4_repetitions);
+    RUN_TEST(test_parity_g5_multi_page_like);
     return UNITY_END();
 }
