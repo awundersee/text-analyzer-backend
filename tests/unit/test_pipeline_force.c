@@ -8,13 +8,13 @@
 #include "yyjson.h"
 
 // Helper: meta string holen
-static const char* meta_get_str(yyjson_doc *doc, const char *key) {
-    yyjson_val *root = yyjson_doc_get_root(doc);
-    yyjson_val *meta = yyjson_obj_get(root, "meta");
+static const char* meta_get_str_mut(yyjson_mut_doc *doc, const char *key) {
+    yyjson_mut_val *root = yyjson_mut_doc_get_root(doc);
+    yyjson_mut_val *meta = yyjson_mut_obj_get(root, "meta");
     if (!meta) return NULL;
-    yyjson_val *v = yyjson_obj_get(meta, key);
-    if (!v || !yyjson_is_str(v)) return NULL;
-    return yyjson_get_str(v);
+    yyjson_mut_val *v = yyjson_mut_obj_get(meta, key);
+    if (!v || !yyjson_mut_is_str(v)) return NULL;
+    return yyjson_mut_get_str(v);
 }
 
 static void analyze_one_page_and_assert(app_pipeline_t requested, const char *expect_used) {
@@ -36,8 +36,8 @@ static void analyze_one_page_and_assert(app_pipeline_t requested, const char *ex
     TEST_ASSERT_EQUAL_INT_MESSAGE(0, r.status, r.message ? r.message : "app_analyze_pages failed");
     TEST_ASSERT_NOT_NULL(r.response_doc);
 
-    const char *req = meta_get_str(r.response_doc, "pipelineRequested");
-    const char *used = meta_get_str(r.response_doc, "pipelineUsed");
+    const char *req  = meta_get_str_mut(r.response_doc, "pipelineRequested");
+    const char *used = meta_get_str_mut(r.response_doc, "pipelineUsed");
 
     TEST_ASSERT_NOT_NULL(req);
     TEST_ASSERT_NOT_NULL(used);
@@ -48,7 +48,8 @@ static void analyze_one_page_and_assert(app_pipeline_t requested, const char *ex
 
     TEST_ASSERT_EQUAL_STRING(expect_used, used);
 
-    yyjson_doc_free(r.response_doc);
+    yyjson_mut_doc_free(r.response_doc);
+    
 }
 
 void test_pipeline_force_string(void) {

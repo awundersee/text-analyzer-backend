@@ -9,6 +9,8 @@
 #include <errno.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <time.h>
+#include <math.h>
 
 #include "yyjson.h"
 #include "app/analyze.h"
@@ -37,6 +39,20 @@ static char *read_file_all(const char *path, size_t *out_len) {
     buf[n] = '\0';
     if (out_len) *out_len = n;
     return buf;
+}
+
+static double now_ms(void) {
+#if defined(CLOCK_MONOTONIC)
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1e6;
+#else
+    return (double)clock() * 1000.0 / (double)CLOCKS_PER_SEC;
+#endif
+}
+
+static inline double round3(double v) {
+    return round(v * 1000.0) / 1000.0;
 }
 
 static int ensure_dir_exists(const char *dir) {
@@ -204,6 +220,7 @@ int cli_run_batch(const char *in_dir, const char *out_dir, int continue_on_error
         // output: <out_dir>/<file>.result.json
         char out_path[4096];
         snprintf(out_path, sizeof(out_path), "%s/%s.result.json", out_dir, ent->d_name);
+        double t0 = now_ms();
 
         size_t json_len = 0;
         char *json = read_file_all(in_path, &json_len);
@@ -250,6 +267,20 @@ int cli_run_batch(const char *in_dir, const char *out_dir, int continue_on_error
         };
 
         app_analyze_result_t res = app_analyze_pages(in.pages, in.count, &opts);
+
+        double t1 = now_ms();
+        double runtime_total_ms = round3(t1 - t0);
+
+        // runtimeMsTotal in meta setzen (damit es im Batch-Output-JSON steht)
+        yyjson_mut_val *root = yyjson_mut_doc_get_root(res.response_doc);
+        yyjson_mut_val *meta = root ? yyjson_mut_obj_get(root, "meta") : NULL;
+
+        if (!meta || !yyjson_mut_is_obj(meta)) {
+            meta = yyjson_mut_obj(res.response_doc);
+            yyjson_mut_obj_add_val(res.response_doc, root, "meta", meta);
+        }
+
+        yyjson_mut_obj_add_real(res.response_doc, meta, "runtimeMsTotal", runtime_total_ms);
 
         if (res.status != 0 || !res.response_doc) {
             const char *msg = res.message ? res.message : "Analysis failed";

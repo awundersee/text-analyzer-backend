@@ -140,6 +140,8 @@ Die Top-K-Begrenzung wird ausschließlich für API- und UI-Ausgaben verwendet.
 ## API
 
 Die HTTP-API dient ausschließlich als dünne Schnittstelle zur Analyse-Logik.
+Die API hat aber verschiedene Grenzen: es werden nur bis zu 100 Seiten analysiert
+und die Datei darf maximal 10MB groß sein.
 
 ### Endpunkte
 
@@ -150,7 +152,7 @@ Die HTTP-API dient ausschließlich als dünne Schnittstelle zur Analyse-Logik.
 * `POST /analyze`
 
   * Führt eine Textanalyse durch
-  * Liefert Top-K-Wörter und Bigrams
+  * Liefert Top-K-Wörter und Bigrams pro Seite und für das gesamte Dokument
 
 Die API validiert eingehende Requests strikt (JSON-Schema, Datentypen,
 Grenzwerte) und antwortet bei Fehlern deterministisch mit geeigneten

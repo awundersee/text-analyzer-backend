@@ -1,3 +1,4 @@
+// src/api/main.c
 // [EXTERN] CivetWeb: HTTP server (MIT)
 // [EXTERN] yyjson: JSON parser/serializer (MIT)
 
@@ -6,15 +7,30 @@
 #include <string.h>
 #include <unistd.h>
 #include <time.h>
-
+#include <math.h>
 #include "civetweb.h"      // from external/civetweb/include
 #include "yyjson.h"        // from external/yyjson/src
+#include <errno.h>
 
 #include "app/analyze.h"
 
 typedef struct {
     const char *stopwords_path;
 } AppConfig;
+
+static double now_ms(void) {
+#if defined(CLOCK_MONOTONIC)
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1e6;
+#else
+    return (double)clock() * 1000.0 / (double)CLOCKS_PER_SEC;
+#endif
+}
+
+static inline double round3(double v) {
+    return round(v * 1000.0) / 1000.0;
+}
 
 static const char *get_env_or_default(const char *key, const char *def) {
     const char *v = getenv(key);
@@ -60,6 +76,7 @@ static int read_request_body(struct mg_connection *conn, char **out_buf, size_t 
 
     if (cl > 10 * 1024 * 1024) {
         // 10MB safety limit
+        errno = EFBIG;
         return 0;
     }
 
@@ -134,11 +151,16 @@ static bool json_get_bool(yyjson_val *obj, const char *key, bool def) {
 
 static int handle_analyze(struct mg_connection *conn, void *cbdata) {
     const AppConfig *cfg = (const AppConfig *)cbdata;
+    double t_req0 = now_ms();
 
     char *body = NULL;
     size_t body_len = 0;
     if (!read_request_body(conn, &body, &body_len) || !body || body_len == 0) {
         free(body);
+        if (errno == EFBIG) {
+            send_json_error(conn, 413, "payload too large (max 10MB)");
+            return 413;
+        }
         send_json_error(conn, 400, "missing request body");
         return 400;
     }
@@ -192,13 +214,13 @@ static int handle_analyze(struct mg_connection *conn, void *cbdata) {
     if (opt && yyjson_is_obj(opt)) {
         yyjson_val *p = yyjson_obj_get(opt, "pipeline");
         if (p && yyjson_is_str(p)) {
-            const char *s = yyjson_get_str(p);
-            if (strcmp(s, "string") == 0) {
-                pipeline = APP_PIPELINE_STRING;
-            } else if (strcmp(s, "id") == 0) {
-                pipeline = APP_PIPELINE_ID;
-            } else {
-                pipeline = APP_PIPELINE_AUTO; // "auto" oder unbekannt
+            int ok = 1;
+            pipeline = app_pipeline_from_str(yyjson_get_str(p), &ok);
+            if (!ok) {
+                yyjson_doc_free(doc);
+                free(body);
+                send_json_error(conn, 400, "invalid options.pipeline (use auto|string|id)");
+                return 400;
             }
         }
     }
@@ -267,12 +289,30 @@ static int handle_analyze(struct mg_connection *conn, void *cbdata) {
 
     free(pp);
 
+    int code = (res.status == 0) ? 200 : res.status;
+    if (code < 100 || code > 599) code = 500;
+
     if (res.status != 0 || !res.response_doc) {
-        yyjson_doc_free(doc);
-        free(body);
-        send_json_error(conn, 500, res.message ? res.message : "analysis failed");
-        return 500;
+    yyjson_doc_free(doc);
+    free(body);
+    send_json_error(conn, code, res.message ? res.message : "analysis failed");
+    return code;
     }
+
+    // Inject total request runtime into response meta (runtimeMsTotal)
+    double t_req1 = now_ms();
+    double runtime_total_ms = round3(t_req1 - t_req0);
+
+    yyjson_mut_val *out_root = yyjson_mut_doc_get_root(res.response_doc);
+    yyjson_mut_val *out_meta = out_root ? yyjson_mut_obj_get(out_root, "meta") : NULL;
+
+    if (!out_meta || !yyjson_mut_is_obj(out_meta)) {
+        out_meta = yyjson_mut_obj(res.response_doc);
+        yyjson_mut_obj_add_val(res.response_doc, out_root, "meta", out_meta);
+    }
+
+    yyjson_mut_obj_add_real(res.response_doc, out_meta, "runtimeMsTotal", runtime_total_ms);
+
 
     const char *out = yyjson_mut_write(res.response_doc, 0, NULL);
     if (!out) {

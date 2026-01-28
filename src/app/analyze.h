@@ -3,12 +3,34 @@
 #include <stdbool.h>
 #include <stddef.h>   // size_t
 #include "yyjson.h"
+#include <string.h>
 
 typedef enum {
   APP_PIPELINE_AUTO = 0,
   APP_PIPELINE_STRING = 1,
   APP_PIPELINE_ID = 2
 } app_pipeline_t;
+
+static inline app_pipeline_t app_pipeline_from_str(const char *s, int *ok) {
+    if (ok) *ok = 1;
+    if (!s || s[0] == '\0') return APP_PIPELINE_AUTO;
+
+    if (strcmp(s, "auto") == 0)   return APP_PIPELINE_AUTO;
+    if (strcmp(s, "string") == 0) return APP_PIPELINE_STRING;
+    if (strcmp(s, "id") == 0)     return APP_PIPELINE_ID;
+
+    if (ok) *ok = 0;
+    return APP_PIPELINE_AUTO;
+}
+
+static inline const char* app_pipeline_to_str(app_pipeline_t p) {
+    switch (p) {
+        case APP_PIPELINE_STRING: return "string";
+        case APP_PIPELINE_ID:     return "id";
+        case APP_PIPELINE_AUTO:
+        default:                  return "auto";
+    }
+}
 
 typedef struct {
     long long id;       // optional
@@ -30,6 +52,7 @@ typedef struct {
     int status;              // 0 = ok
     const char *message;     // static string ok
     yyjson_mut_doc *response_doc;
+    double analysis_runtime_ms;
 } app_analyze_result_t;
 
 app_analyze_result_t app_analyze_pages(const app_page_t *pages,

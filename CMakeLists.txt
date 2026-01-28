@@ -61,7 +61,8 @@ target_include_directories(yyjson PUBLIC
 # ------------------------------------------------------------
 add_library(app STATIC 
   src/app/analyze.c
-  src/app/pipeline_id.c  
+  src/app/pipeline_string.c
+  src/app/pipeline_id.c
   )
 
 target_include_directories(app PUBLIC
@@ -149,6 +150,24 @@ add_custom_target(test_perf_pipeline
   COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/performance/scripts/run_perf_tests_dual_pipelines.sh
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   COMMENT "Running pipeline performance tests"
+)
+
+add_custom_target(test_perf_mem
+  COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/performance/scripts/run_perf_tests_dual_pipelines_mem.sh
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  COMMENT "Running pipeline performance tests"
+)
+
+add_custom_target(test_perf_api_baseline_delta
+  COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/performance/scripts/run_perf_api_baseline_and_delta.sh
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  COMMENT "Running API baseline+delta memory tests"
+)
+
+add_custom_target(test_perf_api_concurrency
+  COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/performance/scripts/run_perf_api_concurrency.sh
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  COMMENT "Running API concurrency memory tests"
 )
 
 # ------------------------------------------------------------

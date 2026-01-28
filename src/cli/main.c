@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdbool.h>
 #include <time.h>
+#include <math.h>
 
 #include "yyjson.h"
 
@@ -51,6 +52,10 @@ static double now_ms(void) {
 #else
     return (double)clock() * 1000.0 / (double)CLOCKS_PER_SEC;
 #endif
+}
+
+static inline double round3(double v) {
+    return round(v * 1000.0) / 1000.0;
 }
 
 static bool json_get_bool(yyjson_val *obj, const char *key, bool fallback) {
@@ -170,10 +175,27 @@ int main(int argc, char **argv) {
 
     const char *in_path = argv[1];
     const char *out_path = NULL;
+    app_pipeline_t pipeline = APP_PIPELINE_AUTO;
 
-    if (argc >= 4 && strcmp(argv[2], "--out") == 0) {
-        out_path = argv[3];
+    for (int i = 2; i < argc; i++) {
+        if (strcmp(argv[i], "--out") == 0 && i + 1 < argc) {
+            out_path = argv[++i];
+        } else if (strcmp(argv[i], "--pipeline") == 0 && i + 1 < argc) {
+            int ok = 1;
+            pipeline = app_pipeline_from_str(argv[++i], &ok);
+            if (!ok) {
+                fprintf(stderr, "Unknown pipeline '%s' (use auto|string|id)\n", argv[i]);
+                return 2;
+            }
+        } else {
+            fprintf(stderr, "Unknown arg: %s\n", argv[i]);
+            fprintf(stderr, "Usage: %s <input.json> [--out output.json] [--pipeline auto|string|id]\n", argv[0]);
+            return 2;
+        }
     }
+
+    // --- run analysis (total) ---
+    double t0 = now_ms();    
 
     size_t json_len = 0;
     char *json = read_file_all(in_path, &json_len);
@@ -190,9 +212,6 @@ int main(int argc, char **argv) {
 
     cli_input_t in = parse_input(doc);
 
-    // --- run analysis (shared core) ---
-    double t0 = now_ms();
-
     // app_analyze_texts should:
     // - run the SAME pipeline as /analyze
     // - return a yyjson_mut_doc* response (or NULL on error)
@@ -204,12 +223,14 @@ int main(int argc, char **argv) {
     .per_page_results  = in.per_page_results,
     .stopwords_path    = sw,
     .top_k             = 0,          // CLI: FULL
-    .domain            = in.domain   // optional
+    .domain            = in.domain,   // optional
+    .pipeline          = pipeline    
     };
 
     app_analyze_result_t res = app_analyze_pages(in.pages, in.count, &opts);
 
     double t1 = now_ms();
+    double runtime_total_ms = round3(t1 - t0);
 
     if (res.status != 0) {
         fprintf(stderr, "Analysis failed: status=%d message=%s\n",
@@ -219,8 +240,56 @@ int main(int argc, char **argv) {
         return 4;
     }
 
-    // Print runtime to stdout (useful for perf scripts)
-    fprintf(stderr, "runtime_ms=%.3f\n", (t1 - t0));
+    // Read runtimeMsAnalyze from meta
+    double analyze_ms = -1.0;
+
+    if (res.response_doc) {
+        yyjson_mut_val *root = yyjson_mut_doc_get_root(res.response_doc);
+        yyjson_mut_val *meta = root ? yyjson_mut_obj_get(root, "meta") : NULL;
+
+        // ensure meta exists
+        if (!meta || !yyjson_mut_is_obj(meta)) {
+            meta = yyjson_mut_obj(res.response_doc);
+            yyjson_mut_obj_add_val(res.response_doc, root, "meta", meta);
+        }
+
+        // read analyze runtime
+        yyjson_mut_val *ja = yyjson_mut_obj_get(meta, "runtimeMsAnalyze");
+        if (ja && yyjson_mut_is_num(ja)) {
+            analyze_ms = yyjson_mut_get_real(ja);
+        }
+
+        // write total runtime
+        yyjson_mut_obj_add_real(res.response_doc, meta, "runtimeMsTotal", runtime_total_ms);
+    }
+
+    if (analyze_ms < 0.0) {
+        fprintf(stderr, "Could not read meta.runtimeMsAnalyze from response\n");
+        return 4;
+    }
+
+    // CLI stdout (used by perf tests)
+    fprintf(stdout, "runtime_ms_total=%.3f\n", runtime_total_ms);
+    fprintf(stdout, "runtime_ms_analyze=%.3f\n", analyze_ms);
+
+
+    // Print peakRss
+    unsigned long long peak_kib = 0ULL;
+
+    if (res.response_doc) {
+        yyjson_mut_val *root = yyjson_mut_doc_get_root(res.response_doc);
+        yyjson_mut_val *meta = root ? yyjson_mut_obj_get(root, "meta") : NULL;
+        if (meta) {
+            yyjson_mut_val *jp = yyjson_mut_obj_get(meta, "peakRssKiB");
+            if (jp && yyjson_mut_is_uint(jp)) peak_kib = (unsigned long long)yyjson_mut_get_uint(jp);
+            else if (jp && yyjson_mut_is_int(jp)) {
+                long long v = yyjson_mut_get_sint(jp);
+                if (v > 0) peak_kib = (unsigned long long)v;
+            }
+        }
+    }
+
+    fprintf(stdout, "peak_rss_kib=%llu\n", peak_kib);
 
     // Optional: write response JSON
     if (out_path && res.response_doc) {

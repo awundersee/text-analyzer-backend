@@ -1,6 +1,7 @@
 // src/app/analyze.c
 #include "app/analyze.h"
 #include "app/pipeline_id.h"
+#include "app/pipeline_string.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -10,8 +11,6 @@
 
 #include "core/tokenizer.h"
 #include "core/stopwords.h"
-#include "core/freq.h"
-#include "core/bigrams.h"
 #include "core/aggregate.h"
 #include "core/bigram_aggregate.h"
 #include "view/topk.h"
@@ -107,7 +106,7 @@ app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, 
         else if (opts->pipeline == APP_PIPELINE_ID) use_id_pipeline = 1;
     }
 
-    double t0 = now_ms();
+    double t_analyze0 = now_ms();
 
     for (size_t i = 0; i < n_pages; i++) {
         const char *t = pages[i].text ? pages[i].text : "";
@@ -140,9 +139,19 @@ app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, 
                 return fail(30, "ID pipeline failed (out of memory?)");
             }
         } else {
-            page_words[i] = count_words(&tokens);
-            if (include_bigrams) {
-                page_bigrams[i] = count_bigrams(&tokens);
+            int ok = analyze_string_pipeline(
+                &tokens,
+                include_bigrams,
+                &page_words[i],
+                include_bigrams ? &page_bigrams[i] : NULL
+            );
+            if (!ok) {
+                free_tokens(&tokens);
+                for (size_t k = 0; k < i; k++) free_word_counts(&page_words[k]);
+                if (include_bigrams) for (size_t k = 0; k < i; k++) free_bigram_counts(&page_bigrams[k]);
+                free(page_words);
+                free(page_bigrams);
+                return fail(31, "String pipeline failed (out of memory?)");
             }
         }
 
@@ -165,7 +174,8 @@ app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, 
         top_bigs = top_k_bigrams(&domain_bigrams, k_bigs);
     }
 
-    double t1 = now_ms();
+    double t_analyze1 = now_ms();
+    double runtime_analyze_ms = round3(t_analyze1 - t_analyze0);
 
     // build response json (Schema wie response-analyse_example.json)
     yyjson_mut_doc *resp = yyjson_mut_doc_new(NULL);
@@ -179,8 +189,7 @@ app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, 
     }
     yyjson_mut_obj_add_uint(resp, meta, "pagesReceived", (uint64_t)n_pages);
     yyjson_mut_obj_add_uint(resp, meta, "charsReceived", (uint64_t)chars_received);
-    double runtime_ms = round3(t1 - t0);
-    yyjson_mut_obj_add_real(resp, meta, "runtimeMs", runtime_ms);
+    yyjson_mut_obj_add_real(resp, meta, "runtimeMsAnalyze", runtime_analyze_ms);
 
     const char *req = pipeline_requested_str(opts);
     const char *used = use_id_pipeline ? "id" : "string";
