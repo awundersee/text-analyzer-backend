@@ -7,6 +7,7 @@
         "w2": "test"
       }
     ],
+    "charCount": 41,
     "words": [
       {
         "count": 2,
@@ -15,12 +16,15 @@
     ]
   },
   "meta": {
-    "charCount": 41,
+    "charsReceived": 41,
     "domain": "https://example.test",
     "pagesReceived": 1,
-    "runtimeMs": 0,
-    "wordCharCount": 32,
-    "wordCount": 10
+    "peakRssKiB": 88108,
+    "pipeline": "string",
+    "pipelineRequested": "auto",
+    "pipelineUsed": "string",
+    "runtimeMsAnalyze": 0.17,
+    "runtimeMsTotal": 0.194
   },
   "pageResults": [
     {
@@ -35,8 +39,6 @@
       "id": 1,
       "name": "Testseite",
       "url": "https://example.test/test",
-      "wordCharCount": 32,
-      "wordCount": 10,
       "words": [
         {
           "count": 2,
