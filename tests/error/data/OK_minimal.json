@@ -1,0 +1,14 @@
+{
+  "pages": [
+    {
+      "id": 1,
+      "name": "Page",
+      "url": "https://example.test/p",
+      "text": "Hallo Welt"
+    }
+  ],
+  "options": {
+    "includeBigrams": true,
+    "perPageResults": true
+  }
+}
