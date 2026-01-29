@@ -14,7 +14,7 @@ mkdir -p "$OUT_DIR"
 
 ts="$(date +%Y%m%d-%H%M%S)"
 OUT="$OUT_DIR/perf_api_concurrency_${ts}.csv"
-echo "concurrency,pipeline,file,ok,count,medianRuntimeMs,medianPeakKiB,comment" > "$OUT"
+echo "concurrency,pipeline,file,ok,count,medianRuntimeAnalyzeMs,medianPeakKiB,comment" > "$OUT"
 
 # ---------------- Health check ----------------
 if ! curl -fsS "${API_URL%/analyze}/health" >/dev/null; then
@@ -52,8 +52,12 @@ PY
 }
 
 collect_files() {
-  find "$DATA_DIR/small" "$DATA_DIR/medium" \
-    -type f -name "*.json" 2>/dev/null | sort
+  local dirs=("$DATA_DIR/small" "$DATA_DIR/medium")
+  if [ "${INCLUDE_LARGE:-0}" = "1" ] && [ -d "$DATA_DIR/large" ]; then
+    dirs+=("$DATA_DIR/large")
+  fi
+
+  find "${dirs[@]}" -type f -name "*.json" 2>/dev/null | sort
 }
 
 FILES="$(collect_files)"
@@ -95,7 +99,7 @@ while IFS= read -r f; do
         code="$(cat "$work/code_$i.txt")"
         resp="$work/resp_$i.json"
         if [ "$code" = "200" ]; then
-          ms="$(json_get "$resp" runtimeMsTotal)"
+          ms="$(json_get "$resp" runtimeMsAnalyze)"
           pk="$(json_get "$resp" peakRssKiB)"
           if [ -n "$ms" ] && [ -n "$pk" ]; then
             times+=("$ms"); peaks+=("$pk"); ok=$((ok+1))

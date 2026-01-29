@@ -38,7 +38,7 @@ mkdir -p "$OUT_DIR"
 ts="$(date +%Y%m%d-%H%M%S)"
 OUT="$OUT_DIR/perf_api_baseline_delta_${ts}.csv"
 
-echo "pipeline,file,runs,baselinePeakKiB,medianPeakKiB,deltaPeakKiB,medianRuntimeMs,minRuntimeMs,maxRuntimeMs,comment" > "$OUT"
+echo "pipeline,file,runs,baselinePeakKiB,medianPeakKiB,deltaPeakKiB,medianRuntimeMsAnalyze,minRuntimeMsAnalyze,maxRuntimeMsAnalyze,comment" > "$OUT"
 
 csv_escape() { printf '%s' "$1" | sed 's/"/""/g'; }
 
@@ -66,7 +66,7 @@ import json, sys
 p=sys.argv[1]; key=sys.argv[2]
 try:
   with open(p,"rb") as f: o=json.load(f)
-  if key=="runtime": v=o.get("meta",{}).get("runtimeMsTotal","")
+  if key=="runtime": v=o.get("meta",{}).get("runtimeMsAnalyze","")
   elif key=="peak": v=o.get("meta",{}).get("peakRssKiB","")
   elif key=="msg": v=o.get("message") or o.get("error") or ""
   else: v=""
@@ -168,7 +168,7 @@ while IFS= read -r f; do
       rm -f "$resp"
 
       if [ -z "$ms" ] || [ -z "$pk" ]; then
-        comment="parse error (runtimeMsTotal/peakRssKiB missing)"
+        comment="parse error (runtimeMsAnalyze/peakRssKiB missing)"
         break
       fi
 
