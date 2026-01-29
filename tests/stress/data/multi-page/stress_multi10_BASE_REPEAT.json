@@ -1,0 +1,65 @@
+{
+  "domain": "https://example.test",
+  "pages": [
+    {
+      "id": 2001,
+      "name": "Multi REPEAT Seite 1",
+      "url": "https://example.test/multi-repeat/seite-1",
+      "text": "Apfel Apfel Apfel Banane Banane Kirsche Kirsche. Heute sagt Anna: Apfel, Banane und Kirsche. Apfel bleibt; Banane reift; Kirsche ist selten."
+    },
+    {
+      "id": 2002,
+      "name": "Multi REPEAT Seite 2",
+      "url": "https://example.test/multi-repeat/seite-2",
+      "text": "Apfel Apfel Apfel Banane Banane Kirsche Kirsche. Heute sagt Anna: Apfel, Banane und Kirsche. Apfel bleibt; Banane reift; Kirsche ist selten."
+    },
+    {
+      "id": 2003,
+      "name": "Multi REPEAT Seite 3",
+      "url": "https://example.test/multi-repeat/seite-3",
+      "text": "Apfel Apfel Apfel Banane Banane Kirsche Kirsche. Heute sagt Anna: Apfel, Banane und Kirsche. Apfel bleibt; Banane reift; Kirsche ist selten."
+    },
+    {
+      "id": 2004,
+      "name": "Multi REPEAT Seite 4",
+      "url": "https://example.test/multi-repeat/seite-4",
+      "text": "Apfel Apfel Apfel Banane Banane Kirsche Kirsche. Heute sagt Anna: Apfel, Banane und Kirsche. Apfel bleibt; Banane reift; Kirsche ist selten."
+    },
+    {
+      "id": 2005,
+      "name": "Multi REPEAT Seite 5",
+      "url": "https://example.test/multi-repeat/seite-5",
+      "text": "Apfel Apfel Apfel Banane Banane Kirsche Kirsche. Heute sagt Anna: Apfel, Banane und Kirsche. Apfel bleibt; Banane reift; Kirsche ist selten."
+    },
+    {
+      "id": 2006,
+      "name": "Multi REPEAT Seite 6",
+      "url": "https://example.test/multi-repeat/seite-6",
+      "text": "Apfel Apfel Apfel Banane Banane Kirsche Kirsche. Heute sagt Anna: Apfel, Banane und Kirsche. Apfel bleibt; Banane reift; Kirsche ist selten."
+    },
+    {
+      "id": 2007,
+      "name": "Multi REPEAT Seite 7",
+      "url": "https://example.test/multi-repeat/seite-7",
+      "text": "Apfel Apfel Apfel Banane Banane Kirsche Kirsche. Heute sagt Anna: Apfel, Banane und Kirsche. Apfel bleibt; Banane reift; Kirsche ist selten."
+    },
+    {
+      "id": 2008,
+      "name": "Multi REPEAT Seite 8",
+      "url": "https://example.test/multi-repeat/seite-8",
+      "text": "Apfel Apfel Apfel Banane Banane Kirsche Kirsche. Heute sagt Anna: Apfel, Banane und Kirsche. Apfel bleibt; Banane reift; Kirsche ist selten."
+    },
+    {
+      "id": 2009,
+      "name": "Multi REPEAT Seite 9",
+      "url": "https://example.test/multi-repeat/seite-9",
+      "text": "Apfel Apfel Apfel Banane Banane Kirsche Kirsche. Heute sagt Anna: Apfel, Banane und Kirsche. Apfel bleibt; Banane reift; Kirsche ist selten."
+    },
+    {
+      "id": 2010,
+      "name": "Multi REPEAT Seite 10",
+      "url": "https://example.test/multi-repeat/seite-10",
+      "text": "Apfel Apfel Apfel Banane Banane Kirsche Kirsche. Heute sagt Anna: Apfel, Banane und Kirsche. Apfel bleibt; Banane reift; Kirsche ist selten."
+    }
+  ]
+}

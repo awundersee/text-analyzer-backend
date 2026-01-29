@@ -1,0 +1,65 @@
+{
+  "domain": "https://example.test",
+  "pages": [
+    {
+      "id": 2001,
+      "name": "Multi NATURAL Seite 1",
+      "url": "https://example.test/multi-natural/seite-1",
+      "text": "Dies ist ein kurzer Beispieltext für einen realistischeren Benchmark. Er enthält mehrere Sätze, unterschiedliche Wortformen und etwas Interpunktion. Ziel ist, dass Tokenisierung und Stoppwortfilterung wie bei echten Webseiten wirken."
+    },
+    {
+      "id": 2002,
+      "name": "Multi NATURAL Seite 2",
+      "url": "https://example.test/multi-natural/seite-2",
+      "text": "Dies ist ein kurzer Beispieltext für einen realistischeren Benchmark. Er enthält mehrere Sätze, unterschiedliche Wortformen und etwas Interpunktion. Ziel ist, dass Tokenisierung und Stoppwortfilterung wie bei echten Webseiten wirken."
+    },
+    {
+      "id": 2003,
+      "name": "Multi NATURAL Seite 3",
+      "url": "https://example.test/multi-natural/seite-3",
+      "text": "Dies ist ein kurzer Beispieltext für einen realistischeren Benchmark. Er enthält mehrere Sätze, unterschiedliche Wortformen und etwas Interpunktion. Ziel ist, dass Tokenisierung und Stoppwortfilterung wie bei echten Webseiten wirken."
+    },
+    {
+      "id": 2004,
+      "name": "Multi NATURAL Seite 4",
+      "url": "https://example.test/multi-natural/seite-4",
+      "text": "Dies ist ein kurzer Beispieltext für einen realistischeren Benchmark. Er enthält mehrere Sätze, unterschiedliche Wortformen und etwas Interpunktion. Ziel ist, dass Tokenisierung und Stoppwortfilterung wie bei echten Webseiten wirken."
+    },
+    {
+      "id": 2005,
+      "name": "Multi NATURAL Seite 5",
+      "url": "https://example.test/multi-natural/seite-5",
+      "text": "Dies ist ein kurzer Beispieltext für einen realistischeren Benchmark. Er enthält mehrere Sätze, unterschiedliche Wortformen und etwas Interpunktion. Ziel ist, dass Tokenisierung und Stoppwortfilterung wie bei echten Webseiten wirken."
+    },
+    {
+      "id": 2006,
+      "name": "Multi NATURAL Seite 6",
+      "url": "https://example.test/multi-natural/seite-6",
+      "text": "Dies ist ein kurzer Beispieltext für einen realistischeren Benchmark. Er enthält mehrere Sätze, unterschiedliche Wortformen und etwas Interpunktion. Ziel ist, dass Tokenisierung und Stoppwortfilterung wie bei echten Webseiten wirken."
+    },
+    {
+      "id": 2007,
+      "name": "Multi NATURAL Seite 7",
+      "url": "https://example.test/multi-natural/seite-7",
+      "text": "Dies ist ein kurzer Beispieltext für einen realistischeren Benchmark. Er enthält mehrere Sätze, unterschiedliche Wortformen und etwas Interpunktion. Ziel ist, dass Tokenisierung und Stoppwortfilterung wie bei echten Webseiten wirken."
+    },
+    {
+      "id": 2008,
+      "name": "Multi NATURAL Seite 8",
+      "url": "https://example.test/multi-natural/seite-8",
+      "text": "Dies ist ein kurzer Beispieltext für einen realistischeren Benchmark. Er enthält mehrere Sätze, unterschiedliche Wortformen und etwas Interpunktion. Ziel ist, dass Tokenisierung und Stoppwortfilterung wie bei echten Webseiten wirken."
+    },
+    {
+      "id": 2009,
+      "name": "Multi NATURAL Seite 9",
+      "url": "https://example.test/multi-natural/seite-9",
+      "text": "Dies ist ein kurzer Beispieltext für einen realistischeren Benchmark. Er enthält mehrere Sätze, unterschiedliche Wortformen und etwas Interpunktion. Ziel ist, dass Tokenisierung und Stoppwortfilterung wie bei echten Webseiten wirken."
+    },
+    {
+      "id": 2010,
+      "name": "Multi NATURAL Seite 10",
+      "url": "https://example.test/multi-natural/seite-10",
+      "text": "Dies ist ein kurzer Beispieltext für einen realistischeren Benchmark. Er enthält mehrere Sätze, unterschiedliche Wortformen und etwas Interpunktion. Ziel ist, dass Tokenisierung und Stoppwortfilterung wie bei echten Webseiten wirken."
+    }
+  ]
+}
