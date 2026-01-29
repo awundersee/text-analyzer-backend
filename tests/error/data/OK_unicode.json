@@ -1,0 +1,14 @@
+{
+  "pages": [
+    {
+      "id": 2,
+      "name": "Unicode",
+      "url": "https://e/u",
+      "text": "ÄÖÜ äöü ß — “quotes” 😀🚀\nCombining: ä ö ü"
+    }
+  ],
+  "options": {
+    "includeBigrams": true,
+    "perPageResults": true
+  }
+}

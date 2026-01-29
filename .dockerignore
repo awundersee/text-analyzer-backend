@@ -17,3 +17,9 @@ Thumbs.db
 
 # Logs / temp
 *.log
+
+# Tests & große Testdaten nicht in den Build-Kontext
+tests/api/
+tests/error/
+tests/performance/
+tests/stress/

@@ -22,10 +22,37 @@ Thumbs.db
 
 # Performance test results (generated)
 tests/performance/results/*
+tests/performance/data/small/*
+tests/performance/data/medium/*
+tests/performance/data/large/*
+tests/performance/data/topk/*
 
 # Keep results directory structure
 !tests/performance/results/.gitkeep
+!tests/performance/data/small/.gitkeep
+!tests/performance/data/medium/.gitkeep
+!tests/performance/data/large/.gitkeep
+!tests/performance/data/topk/.gitkeep
 
+# Stress test results (generated)
+tests/stress/results/*
+tests/stress/data/multi-page/*
+tests/stress/data/single-page/*
+
+# Stress results directory structure
+!tests/stress/results/.gitkeep
+!tests/stress/data/multi-page/.gitkeep
+!tests/stress/data/single-page/.gitkeep
+!tests/stress/data/multi-page/make_multi_stages_to_500mb.zsh
+!tests/stress/data/multi-page/stress_multi10_BASE_BIGRAM_KILLER.json
+!tests/stress/data/multi-page/stress_multi10_BASE_NATURAL.json
+!tests/stress/data/multi-page/stress_multi10_BASE_REPEAT.json
+!tests/stress/data/multi-page/stress_multi10_BASE_UNIQUE.json
+!tests/stress/data/single-page/make_single_stages_to_500mb.zsh
+!tests/stress/data/single-page/stress_single_BASE_BIGRAM_KILLER.json
+!tests/stress/data/single-page/stress_single_BASE_NATURAL.json
+!tests/stress/data/single-page/stress_single_BASE_REPEAT.json
+!tests/stress/data/single-page/stress_single_BASE_UNIQUE.json
 # Performance outputs
 *.csv
 *.json.bak

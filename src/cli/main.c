@@ -13,6 +13,7 @@
 // from src/api/main.c into a shared module, e.g. src/app/analyze.c/.h.
 #include "app/analyze.h"   // <- you will create this (see notes below)
 #include "cli/batch.h"
+#include "input/request_validate.h"
 
 /* ------------------------------------------------------------
  * Helpers
@@ -58,13 +59,6 @@ static inline double round3(double v) {
     return round(v * 1000.0) / 1000.0;
 }
 
-static bool json_get_bool(yyjson_val *obj, const char *key, bool fallback) {
-    yyjson_val *v = yyjson_obj_get(obj, key);
-    if (!v) return fallback;
-    if (yyjson_is_bool(v)) return yyjson_get_bool(v);
-    return fallback;
-}
-
 /* ------------------------------------------------------------
  * Input parsing
  * Accepts either:
@@ -78,68 +72,6 @@ typedef struct {
     bool include_bigrams;
     bool per_page_results;
 } cli_input_t;
-
-static cli_input_t parse_input(yyjson_doc *doc) {
-    yyjson_val *root = yyjson_doc_get_root(doc);
-
-    cli_input_t in = {0};
-    in.include_bigrams = true;
-    in.per_page_results = false;
-    in.domain = NULL;
-
-    yyjson_val *pages = NULL;
-
-    if (yyjson_is_obj(root)) {
-        // domain (optional)
-        yyjson_val *d = yyjson_obj_get(root, "domain");
-        if (d && yyjson_is_str(d)) in.domain = yyjson_get_str(d);
-
-        // options (optional)
-        yyjson_val *opt = yyjson_obj_get(root, "options");
-        if (opt && yyjson_is_obj(opt)) {
-            in.include_bigrams = json_get_bool(opt, "includeBigrams", in.include_bigrams);
-            in.per_page_results = json_get_bool(opt, "perPageResults", in.per_page_results);
-        }
-
-        pages = yyjson_obj_get(root, "pages");
-        if (!pages || !yyjson_is_arr(pages)) die("Input must contain 'pages'[]");
-    } else if (yyjson_is_arr(root)) {
-        // allow bare array of pages (test files)
-        pages = root;
-    } else {
-        die("Root must be an object (with pages) or an array (pages)");
-    }
-
-    size_t n = yyjson_arr_size(pages);
-    if (n == 0) die("'pages' must not be empty");
-
-    in.pages = (app_page_t *)calloc(n, sizeof(app_page_t));
-    if (!in.pages) die("Out of memory");
-
-    size_t idx = 0;
-    yyjson_val *p;
-    yyjson_arr_iter iter = yyjson_arr_iter_with(pages);
-    while ((p = yyjson_arr_iter_next(&iter))) {
-        if (!yyjson_is_obj(p)) die("'pages' must be an array of objects");
-
-        yyjson_val *t = yyjson_obj_get(p, "text");
-        if (!t || !yyjson_is_str(t)) die("each page must contain a string field 'text'");
-
-        yyjson_val *jid   = yyjson_obj_get(p, "id");
-        yyjson_val *jname = yyjson_obj_get(p, "name");
-        yyjson_val *jurl  = yyjson_obj_get(p, "url");
-
-        in.pages[idx].id   = (jid && yyjson_is_int(jid)) ? (long long)yyjson_get_sint(jid) : 0;
-        in.pages[idx].name = (jname && yyjson_is_str(jname)) ? yyjson_get_str(jname) : NULL;
-        in.pages[idx].url  = (jurl && yyjson_is_str(jurl)) ? yyjson_get_str(jurl) : NULL;
-        in.pages[idx].text = yyjson_get_str(t);
-
-        idx++;
-    }
-
-    in.count = n;
-    return in;
-}
 
 int main(int argc, char **argv) {
 
@@ -169,13 +101,15 @@ int main(int argc, char **argv) {
     }
 
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s <input.json> [--out output.json]\n", argv[0]);
+        fprintf(stderr, "Usage: %s <input.json> [--out output.json] [--pipeline auto|string|id]\n", argv[0]);
         return 2;
     }
 
     const char *in_path = argv[1];
     const char *out_path = NULL;
     app_pipeline_t pipeline = APP_PIPELINE_AUTO;
+
+    size_t top_k_cli = 0;  // default: FULL (kein TopK)
 
     for (int i = 2; i < argc; i++) {
         if (strcmp(argv[i], "--out") == 0 && i + 1 < argc) {
@@ -187,47 +121,71 @@ int main(int argc, char **argv) {
                 fprintf(stderr, "Unknown pipeline '%s' (use auto|string|id)\n", argv[i]);
                 return 2;
             }
+        } else if ((strcmp(argv[i], "--topk") == 0 || strcmp(argv[i], "--k") == 0) && i + 1 < argc) {
+            const char *s = argv[++i];
+            char *end = NULL;
+            unsigned long v = strtoul(s, &end, 10);
+            if (s[0] == '\0' || (end && *end != '\0')) {
+                fprintf(stderr, "Invalid value for %s: '%s'\n", argv[i-1], s);
+                fprintf(stderr,
+                    "Usage: %s <input.json> [--out output.json] "
+                    "[--pipeline auto|string|id] [--topk K]\n",
+                    argv[0]);
+                return 2;
+            }
+            top_k_cli = (size_t)v;  // 0 erlaubt (FULL)
         } else {
             fprintf(stderr, "Unknown arg: %s\n", argv[i]);
-            fprintf(stderr, "Usage: %s <input.json> [--out output.json] [--pipeline auto|string|id]\n", argv[0]);
+            fprintf(stderr,
+                "Usage: %s <input.json> [--out output.json] "
+                "[--pipeline auto|string|id] [--topk K]\n",
+                argv[0]);
             return 2;
         }
     }
 
+
     // --- run analysis (total) ---
-    double t0 = now_ms();    
+    double t0 = now_ms();
 
     size_t json_len = 0;
     char *json = read_file_all(in_path, &json_len);
     if (!json) die("Could not read input file");
 
-    yyjson_read_err err;
-    yyjson_doc *doc = yyjson_read_opts(json, json_len, 0, NULL, &err);
-    free(json);
+    // --- shared parse + validate (CLI relaxed profile) ---
+    req_validate_cfg_t vcfg = {
+        .max_pages = 0,                 // unlimited
+        .max_bytes = 0,                 // unlimited
+        .allow_root_array = true,       // allow root = pages[]
+        .allow_options_pipeline = false,// keep CLI behavior: pipeline only via --pipeline
+        .default_include_bigrams = true,
+        .default_per_page_results = true
+    };
 
-    if (!doc) {
-        fprintf(stderr, "JSON parse error at pos %zu: %s\n", err.pos, err.msg);
+    validated_request_t req;
+    req_error_t verr = {0};
+
+    // IMPORTANT: keep `json` buffer alive until validated_request_free(&req)
+    if (!request_parse_and_validate(json, json_len, &vcfg, &req, &verr)) {
+        fprintf(stderr, "Invalid input: %s\n", verr.message ? verr.message : "invalid request");
+        free(json);
         return 3;
     }
 
-    cli_input_t in = parse_input(doc);
-
-    // app_analyze_texts should:
-    // - run the SAME pipeline as /analyze
-    // - return a yyjson_mut_doc* response (or NULL on error)
+    // Stopwords file
     const char *sw = getenv("STOPWORDS_FILE");
     if (!sw) sw = "data/stopwords_de.txt";
 
     app_analyze_opts_t opts = {
-    .include_bigrams   = in.include_bigrams,
-    .per_page_results  = in.per_page_results,
-    .stopwords_path    = sw,
-    .top_k             = 0,          // CLI: FULL
-    .domain            = in.domain,   // optional
-    .pipeline          = pipeline    
+        .include_bigrams   = req.include_bigrams,
+        .per_page_results  = req.per_page_results,
+        .stopwords_path    = sw,
+        .top_k             = top_k_cli,   // default: 0
+        .domain            = req.domain,  // optional
+        .pipeline          = pipeline
     };
 
-    app_analyze_result_t res = app_analyze_pages(in.pages, in.count, &opts);
+    app_analyze_result_t res = app_analyze_pages(req.pages, req.page_count, &opts);
 
     double t1 = now_ms();
     double runtime_total_ms = round3(t1 - t0);
@@ -235,8 +193,9 @@ int main(int argc, char **argv) {
     if (res.status != 0) {
         fprintf(stderr, "Analysis failed: status=%d message=%s\n",
                 res.status, res.message ? res.message : "(no message)");
-        yyjson_doc_free(doc);
-        free(in.pages);
+        if (res.response_doc) yyjson_mut_doc_free(res.response_doc);
+        validated_request_free(&req);
+        free(json);
         return 4;
     }
 
@@ -265,6 +224,9 @@ int main(int argc, char **argv) {
 
     if (analyze_ms < 0.0) {
         fprintf(stderr, "Could not read meta.runtimeMsAnalyze from response\n");
+        if (res.response_doc) yyjson_mut_doc_free(res.response_doc);
+        validated_request_free(&req);
+        free(json);
         return 4;
     }
 
@@ -272,10 +234,8 @@ int main(int argc, char **argv) {
     fprintf(stdout, "runtime_ms_total=%.3f\n", runtime_total_ms);
     fprintf(stdout, "runtime_ms_analyze=%.3f\n", analyze_ms);
 
-
     // Print peakRss
     unsigned long long peak_kib = 0ULL;
-
     if (res.response_doc) {
         yyjson_mut_val *root = yyjson_mut_doc_get_root(res.response_doc);
         yyjson_mut_val *meta = root ? yyjson_mut_obj_get(root, "meta") : NULL;
@@ -288,8 +248,45 @@ int main(int argc, char **argv) {
             }
         }
     }
-
     fprintf(stdout, "peak_rss_kib=%llu\n", peak_kib);
+
+    // Also print domain/page stats for stress CSV (key=value mode)
+    long long pages_received = 0;
+    const char *pipeline_used = NULL;
+    long long word_count = -1, char_count = -1, word_char_count = -1;
+
+    if (res.response_doc) {
+        yyjson_mut_val *root = yyjson_mut_doc_get_root(res.response_doc);
+
+        // meta
+        yyjson_mut_val *meta = root ? yyjson_mut_obj_get(root, "meta") : NULL;
+        if (meta && yyjson_mut_is_obj(meta)) {
+            yyjson_mut_val *pr = yyjson_mut_obj_get(meta, "pagesReceived");
+            if (pr && yyjson_mut_is_int(pr)) pages_received = (long long)yyjson_mut_get_sint(pr);
+
+            yyjson_mut_val *pu = yyjson_mut_obj_get(meta, "pipelineUsed");
+            if (pu && yyjson_mut_is_str(pu)) pipeline_used = yyjson_mut_get_str(pu);
+        }
+
+        // domainResult
+        yyjson_mut_val *dr = root ? yyjson_mut_obj_get(root, "domainResult") : NULL;
+        if (dr && yyjson_mut_is_obj(dr)) {
+            yyjson_mut_val *wc = yyjson_mut_obj_get(dr, "wordCount");
+            if (wc && yyjson_mut_is_int(wc)) word_count = (long long)yyjson_mut_get_sint(wc);
+
+            yyjson_mut_val *cc = yyjson_mut_obj_get(dr, "charCount");
+            if (cc && yyjson_mut_is_int(cc)) char_count = (long long)yyjson_mut_get_sint(cc);
+
+            yyjson_mut_val *wcc = yyjson_mut_obj_get(dr, "wordCharCount");
+            if (wcc && yyjson_mut_is_int(wcc)) word_char_count = (long long)yyjson_mut_get_sint(wcc);
+        }
+    }
+
+    fprintf(stdout, "pages_received=%lld\n", pages_received);
+    fprintf(stdout, "pipeline_used=%s\n", pipeline_used ? pipeline_used : "NA");
+    fprintf(stdout, "word_count=%lld\n", word_count);
+    fprintf(stdout, "char_count=%lld\n", char_count);
+    fprintf(stdout, "word_char_count=%lld\n", word_char_count);
 
     // Optional: write response JSON
     if (out_path && res.response_doc) {
@@ -300,22 +297,26 @@ int main(int argc, char **argv) {
         if (!out) {
             fprintf(stderr, "JSON write error: %s\n", werr.msg);
         } else {
-            FILE *fo = fopen(out_path, "wb");
-            if (!fo) {
-                fprintf(stderr, "Could not open output file for writing: %s\n", out_path);
-            } else {
-                fwrite(out, 1, out_len, fo);
-                fclose(fo);
+            // immer auf stdout ausgeben
+            fwrite(out, 1, out_len, stdout);
+            fputc('\n', stdout);
+
+            // optional: zusätzlich in Datei schreiben
+            if (out_path) {
+                FILE *fo = fopen(out_path, "wb");
+                if (fo) {
+                    fwrite(out, 1, out_len, fo);
+                    fclose(fo);
+                }
             }
             free(out);
         }
-
     }
 
-    // cleanup
+    // cleanup (order matters: req.doc may reference `json`)
     if (res.response_doc) yyjson_mut_doc_free(res.response_doc);
-    yyjson_doc_free(doc);
-    free(in.pages);
+    validated_request_free(&req);
+    free(json);
 
     return 0;
 }

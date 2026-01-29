@@ -63,6 +63,7 @@ add_library(app STATIC
   src/app/analyze.c
   src/app/pipeline_string.c
   src/app/pipeline_id.c
+  src/input/request_validate.c
   )
 
 target_include_directories(app PUBLIC
@@ -88,6 +89,7 @@ add_executable(unit_tests
   tests/unit/test_topk.c
   tests/unit/test_pipeline_parity.c
   tests/unit/test_pipeline_force.c
+  tests/unit/test_request_validate.c
   external/unity/src/unity.c
 )
 
@@ -140,12 +142,6 @@ add_custom_target(test_api
   COMMENT "Running API tests"
 )
 
-add_custom_target(test_perf
-  COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/performance/scripts/run_perf_tests.sh
-  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-  COMMENT "Running performance tests"
-)
-
 add_custom_target(test_perf_pipeline
   COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/performance/scripts/run_perf_tests_dual_pipelines.sh
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
@@ -168,6 +164,33 @@ add_custom_target(test_perf_api_concurrency
   COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/performance/scripts/run_perf_api_concurrency.sh
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   COMMENT "Running API concurrency memory tests"
+)
+
+add_custom_target(test_topk_measure
+  COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/performance/scripts/run_perf_topk_measure.sh
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  COMMENT "Running CLI topK performance tests"
+)
+
+add_custom_target(test_stress_single
+  COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/stress/scripts/run_stress_cli_single_page.sh
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  COMMENT "Running CLI single stress tests"
+)
+
+add_custom_target(test_stress_multi
+  COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/stress/scripts/run_stress_cli_multi_page.sh
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  COMMENT "Running CLI multi stress tests"
+)
+
+add_custom_target(test_error
+  COMMAND ${CMAKE_COMMAND} -E env
+          CLI_BIN=$<TARGET_FILE:analyze_cli>
+          API_URL=http://127.0.0.1:8080/analyze
+          bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/error/scripts/run_suite.sh
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  COMMENT "Running all error test suites (CLI + API)"
 )
 
 # ------------------------------------------------------------

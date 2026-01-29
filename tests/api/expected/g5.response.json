@@ -42,6 +42,7 @@
         "w2": "okay"
       }
     ],
+    "charCount": 159,
     "words": [
       {
         "count": 4,
@@ -74,12 +75,15 @@
     ]
   },
   "meta": {
-    "charCount": 159,
+    "charsReceived": 159,
     "domain": "https://example.test",
     "pagesReceived": 4,
-    "runtimeMs": 1,
-    "wordCharCount": 120,
-    "wordCount": 32
+    "peakRssKiB": 88108,
+    "pipeline": "string",
+    "pipelineRequested": "auto",
+    "pipelineUsed": "string",
+    "runtimeMsAnalyze": 0.576,
+    "runtimeMsTotal": 0.609
   },
   "pageResults": [
     {
@@ -94,8 +98,6 @@
       "id": 1,
       "name": "Testseite G1",
       "url": "https://example.test/test-g1",
-      "wordCharCount": 29,
-      "wordCount": 9,
       "words": [
         {
           "count": 2,
@@ -125,8 +127,6 @@
       "id": 2,
       "name": "Testseite G2",
       "url": "https://example.test/test-g2",
-      "wordCharCount": 33,
-      "wordCount": 8,
       "words": [
         {
           "count": 3,
@@ -154,8 +154,6 @@
       "id": 3,
       "name": "Testseite G3",
       "url": "https://example.test/test-g3",
-      "wordCharCount": 32,
-      "wordCount": 10,
       "words": [
         {
           "count": 2,
@@ -190,8 +188,6 @@
       "id": 4,
       "name": "Testseite G4",
       "url": "https://example.test/test-g4",
-      "wordCharCount": 26,
-      "wordCount": 5,
       "words": [
         {
           "count": 3,

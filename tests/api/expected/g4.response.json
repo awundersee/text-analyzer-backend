@@ -22,6 +22,7 @@
         "w2": "apfel"
       }
     ],
+    "charCount": 30,
     "words": [
       {
         "count": 3,
@@ -38,12 +39,15 @@
     ]
   },
   "meta": {
-    "charCount": 30,
+    "charsReceived": 30,
     "domain": "https://example.test",
     "pagesReceived": 1,
-    "runtimeMs": 1,
-    "wordCharCount": 26,
-    "wordCount": 5
+    "peakRssKiB": 88108,
+    "pipeline": "string",
+    "pipelineRequested": "auto",
+    "pipelineUsed": "string",
+    "runtimeMsAnalyze": 0.199,
+    "runtimeMsTotal": 0.258
   },
   "pageResults": [
     {
@@ -73,8 +77,6 @@
       "id": 1,
       "name": "Testseite",
       "url": "https://example.test/test",
-      "wordCharCount": 26,
-      "wordCount": 5,
       "words": [
         {
           "count": 3,

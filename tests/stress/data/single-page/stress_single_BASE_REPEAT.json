@@ -1,0 +1,11 @@
+{
+  "domain": "https://example.test",
+  "pages": [
+    {
+      "id": 1001,
+      "name": "Single REPEAT",
+      "url": "https://example.test/single-repeat",
+      "text": "Apfel Apfel Apfel Banane Banane Kirsche Kirsche. Heute sagt Anna: Apfel, Banane und Kirsche. Apfel bleibt; Banane reift; Kirsche ist selten."
+    }
+  ]
+}

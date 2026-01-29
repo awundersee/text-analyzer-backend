@@ -2,6 +2,15 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+#include <inttypes.h>
+#include <stdio.h>
+
+static inline uint64_t now_ns(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000000ull + ts.tv_nsec;
+}
 
 static char *dup_cstr(const char *s) {
     if (!s) return NULL;
@@ -32,6 +41,11 @@ WordCountList top_k_words(const WordCountList *list, size_t k) {
     WordCountList out = (WordCountList){0};
     if (!list || !list->items || list->count == 0 || k == 0) return out;
 
+    const char *perf = getenv("PERF_TOPK");
+    uint64_t t0=0, t_copy=0, t_sort=0, t_out=0;
+
+    if (perf) t0 = now_ns();
+
     // copy all
     WordCount *tmp = (WordCount *)calloc(list->count, sizeof(WordCount));
     if (!tmp) return out;
@@ -47,7 +61,11 @@ WordCountList top_k_words(const WordCountList *list, size_t k) {
         }
     }
 
+    if (perf) t_copy = now_ns();
+
     qsort(tmp, list->count, sizeof(WordCount), cmp_wordcount_desc_then_word_asc);
+
+    if (perf) t_sort = now_ns();
 
     size_t n = list->count < k ? list->count : k;
 
@@ -68,6 +86,19 @@ WordCountList top_k_words(const WordCountList *list, size_t k) {
     // cleanup remaining temp
     for (size_t i = 0; i < list->count; i++) free(tmp[i].word);
     free(tmp);
+
+    if (perf) {
+        t_out = now_ns();
+        fprintf(stderr,
+            "PERF_TOPK words total_ns=%" PRIu64 " copy_ns=%" PRIu64 " sort_ns=%" PRIu64
+            " out_ns=%" PRIu64 " n=%zu k=%zu\n",
+            (t_out - t0),
+            (t_copy - t0),
+            (t_sort - t_copy),
+            (t_out - t_sort),
+            list->count, k
+        );
+    }
 
     return out;
 }
@@ -100,6 +131,11 @@ BigramCountList top_k_bigrams(const BigramCountList *list, size_t k) {
     BigramCountList out = (BigramCountList){0};
     if (!list || !list->items || list->count == 0 || k == 0) return out;
 
+    const char *perf = getenv("PERF_TOPK");
+    uint64_t t0=0, t_copy=0, t_sort=0, t_out=0;
+
+    if (perf) t0 = now_ns();
+
     BigramCount *tmp = (BigramCount *)calloc(list->count, sizeof(BigramCount));
     if (!tmp) return out;
 
@@ -118,7 +154,11 @@ BigramCountList top_k_bigrams(const BigramCountList *list, size_t k) {
         }
     }
 
+    if (perf) t_copy = now_ns();
+
     qsort(tmp, list->count, sizeof(BigramCount), cmp_bigram_desc_then_lex);
+
+    if (perf) t_sort = now_ns();
 
     size_t n = list->count < k ? list->count : k;
 
@@ -144,6 +184,19 @@ BigramCountList top_k_bigrams(const BigramCountList *list, size_t k) {
         free(tmp[i].w2);
     }
     free(tmp);
+
+    if (perf) {
+        t_out = now_ns();
+        fprintf(stderr,
+            "PERF_TOPK bigrams total_ns=%" PRIu64 " copy_ns=%" PRIu64 " sort_ns=%" PRIu64
+            " out_ns=%" PRIu64 " n=%zu k=%zu\n",
+            (uint64_t)(t_out - t0),
+            (uint64_t)(t_copy - t0),
+            (uint64_t)(t_sort - t_copy),
+            (uint64_t)(t_out - t_sort),
+            list->count, k
+        );
+    }
 
     return out;
 }

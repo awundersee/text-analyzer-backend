@@ -94,6 +94,17 @@ void test_parity_g3_stopwords(void);
 void test_parity_g4_repetitions(void);
 void test_parity_g5_multi_page_like(void);
 
+void test_api_rejects_root_array(void);
+void test_cli_accepts_root_array(void);
+void test_api_requires_pages_array(void);
+void test_api_rejects_empty_pages(void);
+void test_api_rejects_too_many_pages(void);
+void test_page_requires_text_string(void);
+void test_options_defaults_and_overrides(void);
+void test_api_accepts_valid_pipeline_option(void);
+void test_api_rejects_invalid_pipeline_option(void);
+void test_cli_ignores_pipeline_option(void);
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_tokenizer_g1_hallo_welt);
@@ -112,5 +123,16 @@ int main(void) {
     RUN_TEST(test_parity_g3_stopwords);
     RUN_TEST(test_parity_g4_repetitions);
     RUN_TEST(test_parity_g5_multi_page_like);
+    RUN_TEST(test_api_rejects_root_array);
+    RUN_TEST(test_cli_accepts_root_array);
+    RUN_TEST(test_api_requires_pages_array);
+    RUN_TEST(test_api_rejects_empty_pages);
+    RUN_TEST(test_api_rejects_too_many_pages);
+    RUN_TEST(test_page_requires_text_string);
+    RUN_TEST(test_options_defaults_and_overrides);
+    RUN_TEST(test_api_accepts_valid_pipeline_option);
+    RUN_TEST(test_api_rejects_invalid_pipeline_option);
+    RUN_TEST(test_cli_ignores_pipeline_option);
+
     return UNITY_END();
 }

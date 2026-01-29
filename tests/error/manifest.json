@@ -1,0 +1,128 @@
+[
+  {
+    "file": "OK_minimal.json",
+    "expect_cli_exit": 0,
+    "expect_api_http": 200,
+    "category": "OK",
+    "note": "Minimal request object with pages (matches API+CLI expected schema)"
+  },
+  {
+    "file": "OK_unicode.json",
+    "expect_cli_exit": 0,
+    "expect_api_http": 200,
+    "category": "OK",
+    "note": "Unicode/emoji should not crash"
+  },
+  {
+    "file": "OK_root_array_cli_only.json",
+    "expect_cli_exit": 0,
+    "expect_api_http": 400,
+    "category": "DIFF",
+    "note": "CLI allows root array; API (allow_root_array=false) rejects"
+  },
+  {
+    "file": "ERR_empty_file.json",
+    "expect_cli_exit": 3,
+    "expect_api_http": 400,
+    "category": "ERR_FATAL",
+    "note": "Empty body / invalid JSON"
+  },
+  {
+    "file": "ERR_whitespace_only.json",
+    "expect_cli_exit": 3,
+    "expect_api_http": 400,
+    "category": "ERR_FATAL",
+    "note": "Whitespace only / invalid JSON"
+  },
+  {
+    "file": "ERR_not_json.txt",
+    "expect_cli_exit": 3,
+    "expect_api_http": 400,
+    "category": "ERR_FATAL",
+    "note": "Not JSON"
+  },
+  {
+    "file": "ERR_invalid_json_trailing_comma.json",
+    "expect_cli_exit": 3,
+    "expect_api_http": 400,
+    "category": "ERR_FATAL",
+    "note": "Invalid JSON (trailing comma)"
+  },
+  {
+    "file": "ERR_object_missing_pages.json",
+    "expect_cli_exit": 3,
+    "expect_api_http": 400,
+    "category": "ERR_FATAL",
+    "note": "Missing pages"
+  },
+  {
+    "file": "ERR_pages_not_array.json",
+    "expect_cli_exit": 3,
+    "expect_api_http": 400,
+    "category": "ERR_FATAL",
+    "note": "pages not array"
+  },
+  {
+    "file": "ERR_pages_empty.json",
+    "expect_cli_exit": 3,
+    "expect_api_http": 400,
+    "category": "ERR_FATAL",
+    "note": "pages empty"
+  },
+  {
+    "file": "ERR_page_not_object.json",
+    "expect_cli_exit": 3,
+    "expect_api_http": 400,
+    "category": "ERR_FATAL",
+    "note": "page element not object"
+  },
+  {
+    "file": "ERR_page_missing_text.json",
+    "expect_cli_exit": 3,
+    "expect_api_http": 400,
+    "category": "ERR_FATAL",
+    "note": "missing text"
+  },
+  {
+    "file": "ERR_text_not_string.json",
+    "expect_cli_exit": 3,
+    "expect_api_http": 400,
+    "category": "ERR_FATAL",
+    "note": "text not string"
+  },
+  {
+    "file": "ERR_invalid_utf8_bytes.json",
+    "expect_cli_exit": 3,
+    "expect_api_http": 400,
+    "category": "ERR_FATAL",
+    "note": "If this passes, UTF-8 validation is missing"
+  },
+  {
+    "file": "GAP_missing_id_name_url.json",
+    "expect_cli_exit": 0,
+    "expect_api_http": 200,
+    "category": "GAP",
+    "note": "Only text required -> id/name/url optional"
+  },
+  {
+    "file": "GAP_id_float_becomes_zero.json",
+    "expect_cli_exit": 0,
+    "expect_api_http": 200,
+    "category": "GAP",
+    "note": "Non-int id silently becomes 0"
+  },
+  {
+    "file": "GAP_url_not_string.json",
+    "expect_cli_exit": 0,
+    "expect_api_http": 200,
+    "category": "GAP",
+    "note": "Non-string url ignored (NULL)"
+  },
+  {
+    "file": "DIFF_api_too_many_pages_101.json",
+    "expect_cli_exit": 0,
+    "expect_api_http": 413,
+    "category": "DIFF",
+    "note": "API max_pages=100 (cfg), CLI unlimited"
+  }
+]

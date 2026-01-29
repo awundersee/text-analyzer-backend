@@ -1,0 +1,12 @@
+{
+  "pages": [
+    {
+      "id": 1,
+      "name": "x",
+      "url": {
+        "href": "x"
+      },
+      "text": "Hallo"
+    }
+  ]
+}

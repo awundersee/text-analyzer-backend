@@ -1,0 +1,11 @@
+{
+  "domain": "https://example.test",
+  "pages": [
+    {
+      "id": 1001,
+      "name": "Single NATURAL",
+      "url": "https://example.test/single-natural",
+      "text": "Dies ist ein kurzer Beispieltext für einen realistischeren Benchmark. Er enthält mehrere Sätze, unterschiedliche Wortformen und etwas Interpunktion. Ziel ist, dass Tokenisierung und Stoppwortfilterung wie bei echten Webseiten wirken."
+    }
+  ]
+}
