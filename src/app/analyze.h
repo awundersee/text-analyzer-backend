@@ -55,6 +55,12 @@ typedef struct {
     double analysis_runtime_ms;
 } app_analyze_result_t;
 
+typedef struct {
+    size_t charCount;
+    size_t wordCount;
+    size_t wordCharCount;
+} TextMetrics;
+
 app_analyze_result_t app_analyze_pages(const app_page_t *pages,
                                        size_t n_pages,
                                        const app_analyze_opts_t *opts);

@@ -13,7 +13,7 @@
 #include <math.h>
 
 #include "yyjson.h"
-#include "app/analyze.h"
+#include "input/request_validate.h"
 
 static int ends_with_json(const char *name) {
     size_t n = strlen(name);
@@ -61,99 +61,6 @@ static int ensure_dir_exists(const char *dir) {
     if (mkdir(dir, 0755) == 0) return 0;
     if (errno == EEXIST) return 0;
     return -1;
-}
-
-static bool json_get_bool(yyjson_val *obj, const char *key, bool fallback) {
-    yyjson_val *v = yyjson_obj_get(obj, key);
-    if (!v) return fallback;
-    if (yyjson_is_bool(v)) return yyjson_get_bool(v);
-    return fallback;
-}
-
-// Matches your CLI parsing style: {domain?, options?, pages:[{text,id,name,url}] }
-typedef struct {
-    app_page_t *pages;        // malloc'd array
-    size_t count;
-    const char *domain;       // pointer into yyjson doc
-    bool include_bigrams;
-    bool per_page_results;
-} cli_input_t;
-
-static int parse_input(yyjson_doc *doc, cli_input_t *out, char *errbuf, size_t errcap) {
-    yyjson_val *root = yyjson_doc_get_root(doc);
-
-    cli_input_t in = {0};
-    in.include_bigrams = true;
-    in.per_page_results = false;
-    in.domain = NULL;
-
-    yyjson_val *pages = NULL;
-
-    if (yyjson_is_obj(root)) {
-        yyjson_val *d = yyjson_obj_get(root, "domain");
-        if (d && yyjson_is_str(d)) in.domain = yyjson_get_str(d);
-
-        yyjson_val *opt = yyjson_obj_get(root, "options");
-        if (opt && yyjson_is_obj(opt)) {
-            in.include_bigrams = json_get_bool(opt, "includeBigrams", in.include_bigrams);
-            in.per_page_results = json_get_bool(opt, "perPageResults", in.per_page_results);
-        }
-
-        pages = yyjson_obj_get(root, "pages");
-        if (!pages || !yyjson_is_arr(pages)) {
-            snprintf(errbuf, errcap, "Input must contain 'pages'[]");
-            return -1;
-        }
-    } else if (yyjson_is_arr(root)) {
-        pages = root;
-    } else {
-        snprintf(errbuf, errcap, "Root must be an object (with pages) or an array (pages)");
-        return -1;
-    }
-
-    size_t n = yyjson_arr_size(pages);
-    if (n == 0) {
-        snprintf(errbuf, errcap, "'pages' must not be empty");
-        return -1;
-    }
-
-    in.pages = (app_page_t *)calloc(n, sizeof(app_page_t));
-    if (!in.pages) {
-        snprintf(errbuf, errcap, "Out of memory");
-        return -1;
-    }
-
-    size_t idx = 0;
-    yyjson_val *p;
-    yyjson_arr_iter iter = yyjson_arr_iter_with(pages);
-    while ((p = yyjson_arr_iter_next(&iter))) {
-        if (!yyjson_is_obj(p)) {
-            snprintf(errbuf, errcap, "'pages' must be an array of objects");
-            free(in.pages);
-            return -1;
-        }
-
-        yyjson_val *t = yyjson_obj_get(p, "text");
-        if (!t || !yyjson_is_str(t)) {
-            snprintf(errbuf, errcap, "each page must contain a string field 'text'");
-            free(in.pages);
-            return -1;
-        }
-
-        yyjson_val *jid   = yyjson_obj_get(p, "id");
-        yyjson_val *jname = yyjson_obj_get(p, "name");
-        yyjson_val *jurl  = yyjson_obj_get(p, "url");
-
-        in.pages[idx].id   = (jid && yyjson_is_int(jid)) ? (long long)yyjson_get_sint(jid) : 0;
-        in.pages[idx].name = (jname && yyjson_is_str(jname)) ? yyjson_get_str(jname) : NULL;
-        in.pages[idx].url  = (jurl && yyjson_is_str(jurl)) ? yyjson_get_str(jurl) : NULL;
-        in.pages[idx].text = yyjson_get_str(t);
-        idx++;
-    }
-
-    in.count = n;
-    *out = in;
-    return 0;
 }
 
 static int write_error_json(const char *out_path, const char *input_name, const char *message) {
@@ -207,6 +114,16 @@ int cli_run_batch(const char *in_dir, const char *out_dir, int continue_on_error
     const char *sw = getenv("STOPWORDS_FILE");
     if (!sw) sw = "data/stopwords_de.txt";
 
+    // CLI relaxed profile (batch): no limits, allow root array
+    req_validate_cfg_t vcfg = {
+        .max_pages = 0,
+        .max_bytes = 0,
+        .allow_root_array = true,
+        .allow_options_pipeline = false, // keep CLI behavior
+        .default_include_bigrams = true,
+        .default_per_page_results = true
+    };
+
     int had_failure = 0;
     struct dirent *ent;
 
@@ -220,6 +137,7 @@ int cli_run_batch(const char *in_dir, const char *out_dir, int continue_on_error
         // output: <out_dir>/<file>.result.json
         char out_path[4096];
         snprintf(out_path, sizeof(out_path), "%s/%s.result.json", out_dir, ent->d_name);
+
         double t0 = now_ms();
 
         size_t json_len = 0;
@@ -232,26 +150,15 @@ int cli_run_batch(const char *in_dir, const char *out_dir, int continue_on_error
             continue;
         }
 
-        yyjson_read_err rerr;
-        yyjson_doc *doc = yyjson_read_opts(json, json_len, 0, NULL, &rerr);
-        free(json);
+        validated_request_t req;
+        req_error_t verr = {0};
 
-        if (!doc) {
-            char msg[256];
-            snprintf(msg, sizeof(msg), "JSON parse error at pos %zu: %s", rerr.pos, rerr.msg);
-            fprintf(stderr, "[ERR] %s\n", msg);
+        // IMPORTANT: keep `json` buffer alive until validated_request_free(&req)
+        if (!request_parse_and_validate(json, json_len, &vcfg, &req, &verr)) {
+            const char *msg = verr.message ? verr.message : "invalid request";
+            fprintf(stderr, "[ERR] %s: %s\n", ent->d_name, msg);
             write_error_json(out_path, ent->d_name, msg);
-            had_failure = 1;
-            if (!continue_on_error) break;
-            continue;
-        }
-
-        cli_input_t in = {0};
-        char perr[256];
-        if (parse_input(doc, &in, perr, sizeof(perr)) != 0) {
-            fprintf(stderr, "[ERR] %s: %s\n", ent->d_name, perr);
-            write_error_json(out_path, ent->d_name, perr);
-            yyjson_doc_free(doc);
+            free(json);
             had_failure = 1;
             if (!continue_on_error) break;
             continue;
@@ -259,28 +166,31 @@ int cli_run_batch(const char *in_dir, const char *out_dir, int continue_on_error
 
         // FULL output for batch: top_k = 0
         app_analyze_opts_t opts = {
-            .include_bigrams  = in.include_bigrams,
-            .per_page_results = in.per_page_results,
+            .include_bigrams  = req.include_bigrams,
+            .per_page_results = req.per_page_results,
             .stopwords_path   = sw,
             .top_k            = 0,
-            .domain           = in.domain
+            .domain           = req.domain,
+            .pipeline         = APP_PIPELINE_AUTO
         };
 
-        app_analyze_result_t res = app_analyze_pages(in.pages, in.count, &opts);
+        app_analyze_result_t res = app_analyze_pages(req.pages, req.page_count, &opts);
 
         double t1 = now_ms();
         double runtime_total_ms = round3(t1 - t0);
 
-        // runtimeMsTotal in meta setzen (damit es im Batch-Output-JSON steht)
-        yyjson_mut_val *root = yyjson_mut_doc_get_root(res.response_doc);
-        yyjson_mut_val *meta = root ? yyjson_mut_obj_get(root, "meta") : NULL;
+        // Inject runtimeMsTotal into meta (only if response exists)
+        if (res.response_doc) {
+            yyjson_mut_val *root = yyjson_mut_doc_get_root(res.response_doc);
+            yyjson_mut_val *meta = root ? yyjson_mut_obj_get(root, "meta") : NULL;
 
-        if (!meta || !yyjson_mut_is_obj(meta)) {
-            meta = yyjson_mut_obj(res.response_doc);
-            yyjson_mut_obj_add_val(res.response_doc, root, "meta", meta);
+            if (!meta || !yyjson_mut_is_obj(meta)) {
+                meta = yyjson_mut_obj(res.response_doc);
+                yyjson_mut_obj_add_val(res.response_doc, root, "meta", meta);
+            }
+
+            yyjson_mut_obj_add_real(res.response_doc, meta, "runtimeMsTotal", runtime_total_ms);
         }
-
-        yyjson_mut_obj_add_real(res.response_doc, meta, "runtimeMsTotal", runtime_total_ms);
 
         if (res.status != 0 || !res.response_doc) {
             const char *msg = res.message ? res.message : "Analysis failed";
@@ -289,8 +199,8 @@ int cli_run_batch(const char *in_dir, const char *out_dir, int continue_on_error
             had_failure = 1;
 
             if (res.response_doc) yyjson_mut_doc_free(res.response_doc);
-            yyjson_doc_free(doc);
-            free(in.pages);
+            validated_request_free(&req);
+            free(json);
 
             if (!continue_on_error) break;
             continue;
@@ -302,8 +212,8 @@ int cli_run_batch(const char *in_dir, const char *out_dir, int continue_on_error
             had_failure = 1;
 
             yyjson_mut_doc_free(res.response_doc);
-            yyjson_doc_free(doc);
-            free(in.pages);
+            validated_request_free(&req);
+            free(json);
 
             if (!continue_on_error) break;
             continue;
@@ -312,8 +222,8 @@ int cli_run_batch(const char *in_dir, const char *out_dir, int continue_on_error
         printf("[OK] %s -> %s\n", in_path, out_path);
 
         yyjson_mut_doc_free(res.response_doc);
-        yyjson_doc_free(doc);
-        free(in.pages);
+        validated_request_free(&req);
+        free(json);
     }
 
     closedir(d);

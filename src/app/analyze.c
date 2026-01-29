@@ -18,7 +18,7 @@
 
 #include "yyjson.h"
 
-#define PIPELINE_THRESHOLD_CHARS (2u * 1024u * 1024u)  // 2 MB, Phase 2 Fixwert
+#define PIPELINE_THRESHOLD_CHARS (256 * 1024) // 256 KB
 
 static double now_ms(void) {
 #if defined(CLOCK_MONOTONIC)
@@ -74,6 +74,24 @@ static const char* pipeline_requested_str(const app_analyze_opts_t *opts) {
     }
 }
 
+static TextMetrics compute_metrics(const char *text, TokenList tokens) {
+    TextMetrics m = {0};
+
+    if (text) {
+        m.charCount = strlen(text);
+    }
+
+    m.wordCount = tokens.count;
+
+    for (size_t i = 0; i < tokens.count; i++) {
+        if (tokens.items[i]) {
+            m.wordCharCount += strlen(tokens.items[i]);
+        }
+    }
+
+    return m;
+}
+
 app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, const app_analyze_opts_t *opts) {
     if (!pages || n_pages == 0) return fail(10, "No pages provided");
 
@@ -106,6 +124,15 @@ app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, 
         else if (opts->pipeline == APP_PIPELINE_ID) use_id_pipeline = 1;
     }
 
+    // --- Metrics (wordCount, wordCharCount, charCount) ---
+    TextMetrics domain_metrics = (TextMetrics){0};
+    TextMetrics *page_metrics = (TextMetrics *)calloc(n_pages, sizeof(TextMetrics));
+    if (!page_metrics) {
+        free(page_words);
+        free(page_bigrams);
+        return fail(11, "Out of memory (page_metrics)");
+    }
+
     double t_analyze0 = now_ms();
 
     for (size_t i = 0; i < n_pages; i++) {
@@ -120,8 +147,16 @@ app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, 
             if (include_bigrams) for (size_t k = 0; k < i; k++) free_bigram_counts(&page_bigrams[k]);
             free(page_words);
             free(page_bigrams);
+            free(page_metrics);
             return fail(20, "Stopwords filter failed (file missing or invalid?)");
         }
+
+        // Metrics after stopword filtering (consistent with word/bigram counts)
+        page_metrics[i] = compute_metrics(t, tokens);
+
+        domain_metrics.charCount     += page_metrics[i].charCount;
+        domain_metrics.wordCount     += page_metrics[i].wordCount;
+        domain_metrics.wordCharCount += page_metrics[i].wordCharCount;
 
         if (use_id_pipeline) {
             int ok = analyze_id_pipeline(
@@ -136,6 +171,7 @@ app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, 
                 if (include_bigrams) for (size_t k = 0; k < i; k++) free_bigram_counts(&page_bigrams[k]);
                 free(page_words);
                 free(page_bigrams);
+                free(page_metrics);
                 return fail(30, "ID pipeline failed (out of memory?)");
             }
         } else {
@@ -151,6 +187,7 @@ app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, 
                 if (include_bigrams) for (size_t k = 0; k < i; k++) free_bigram_counts(&page_bigrams[k]);
                 free(page_words);
                 free(page_bigrams);
+                free(page_metrics);
                 return fail(31, "String pipeline failed (out of memory?)");
             }
         }
@@ -179,7 +216,24 @@ app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, 
 
     // build response json (Schema wie response-analyse_example.json)
     yyjson_mut_doc *resp = yyjson_mut_doc_new(NULL);
-    if (!resp) return fail(12, "Out of memory (response)");
+    if (!resp) {
+        for (size_t i = 0; i < n_pages; i++) free_word_counts(&page_words[i]);
+        free(page_words);
+
+        if (include_bigrams) {
+            for (size_t i = 0; i < n_pages; i++) free_bigram_counts(&page_bigrams[i]);
+            free(page_bigrams);
+            free_aggregated_bigram_counts(&domain_bigrams);
+            free_top_k_bigrams(&top_bigs);
+        }
+
+        free_aggregated_word_counts(&domain_words);
+        free_top_k_words(&top_words);
+
+        free(page_metrics);
+        return fail(12, "Out of memory (response)");
+    }
+
     yyjson_mut_val *root = yyjson_mut_obj(resp);
     yyjson_mut_doc_set_root(resp, root);
 
@@ -188,21 +242,21 @@ app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, 
         yyjson_mut_obj_add_strcpy(resp, meta, "domain", domain_str);
     }
     yyjson_mut_obj_add_uint(resp, meta, "pagesReceived", (uint64_t)n_pages);
-    yyjson_mut_obj_add_uint(resp, meta, "charsReceived", (uint64_t)chars_received);
     yyjson_mut_obj_add_real(resp, meta, "runtimeMsAnalyze", runtime_analyze_ms);
 
     const char *req = pipeline_requested_str(opts);
     const char *used = use_id_pipeline ? "id" : "string";
     yyjson_mut_obj_add_strcpy(resp, meta, "pipelineRequested", req);
     yyjson_mut_obj_add_strcpy(resp, meta, "pipelineUsed", used);
-    yyjson_mut_obj_add_strcpy(resp, meta, "pipeline", used);
 
     yyjson_mut_obj_add_uint(resp, meta, "peakRssKiB", ta_peak_rss_kib());
 
     yyjson_mut_obj_add_val(resp, root, "meta", meta);
 
     yyjson_mut_val *domain = yyjson_mut_obj(resp);
-    yyjson_mut_obj_add_uint(resp, domain, "charCount", (uint64_t)chars_received);
+    yyjson_mut_obj_add_uint(resp, domain, "charCount", (uint64_t)domain_metrics.charCount);
+    yyjson_mut_obj_add_uint(resp, domain, "wordCount", (uint64_t)domain_metrics.wordCount);
+    yyjson_mut_obj_add_uint(resp, domain, "wordCharCount", (uint64_t)domain_metrics.wordCharCount);
 
     yyjson_mut_val *words_arr = yyjson_mut_arr(resp);
     json_add_word_list(resp, words_arr, &top_words);
@@ -226,8 +280,9 @@ app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, 
             if (pages[i].name) yyjson_mut_obj_add_strcpy(resp, p, "name", pages[i].name);
             if (pages[i].url)  yyjson_mut_obj_add_strcpy(resp, p, "url", pages[i].url);
 
-            const char *txt = pages[i].text ? pages[i].text : "";
-            yyjson_mut_obj_add_uint(resp, p, "charCount", (uint64_t)strlen(txt));
+            yyjson_mut_obj_add_uint(resp, p, "charCount", (uint64_t)page_metrics[i].charCount);
+            yyjson_mut_obj_add_uint(resp, p, "wordCount", (uint64_t)page_metrics[i].wordCount);
+            yyjson_mut_obj_add_uint(resp, p, "wordCharCount", (uint64_t)page_metrics[i].wordCharCount);
 
             // per-page top/full
             size_t k_pw = (topk == 0) ? page_words[i].count : topk;
@@ -272,5 +327,6 @@ app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, 
     ok.status = 0;
     ok.message = NULL;
     ok.response_doc = resp;
+    free(page_metrics);
     return ok;
 }

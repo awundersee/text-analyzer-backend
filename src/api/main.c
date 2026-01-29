@@ -8,11 +8,12 @@
 #include <unistd.h>
 #include <time.h>
 #include <math.h>
+#include <errno.h>
 #include "civetweb.h"      // from external/civetweb/include
 #include "yyjson.h"        // from external/yyjson/src
-#include <errno.h>
 
 #include "app/analyze.h"
+#include "input/request_validate.h"
 
 typedef struct {
     const char *stopwords_path;
@@ -142,19 +143,13 @@ static int handle_health(struct mg_connection *conn, void *cbdata) {
     return 200;
 }
 
-static bool json_get_bool(yyjson_val *obj, const char *key, bool def) {
-    yyjson_val *v = yyjson_obj_get(obj, key);
-    if (!v) return def;
-    if (yyjson_is_bool(v)) return yyjson_get_bool(v);
-    return def;
-}
-
 static int handle_analyze(struct mg_connection *conn, void *cbdata) {
     const AppConfig *cfg = (const AppConfig *)cbdata;
     double t_req0 = now_ms();
 
     char *body = NULL;
     size_t body_len = 0;
+
     if (!read_request_body(conn, &body, &body_len) || !body || body_len == 0) {
         free(body);
         if (errno == EFBIG) {
@@ -165,138 +160,56 @@ static int handle_analyze(struct mg_connection *conn, void *cbdata) {
         return 400;
     }
 
-    yyjson_read_err err;
-    yyjson_doc *doc = yyjson_read_opts(body, body_len, 0, NULL, &err);
-    if (!doc) {
+    // --- shared parse + validate (API strict profile) ---
+    req_validate_cfg_t vcfg = {
+        .max_pages = 100,
+        .max_bytes = 10 * 1024 * 1024,  // optional (read_request_body already enforces 10MB)
+        .allow_root_array = false,
+        .allow_options_pipeline = true,
+        .default_include_bigrams = true,
+        .default_per_page_results = true
+    };
+
+    validated_request_t req;
+    req_error_t verr = {0};
+
+    if (!request_parse_and_validate(body, body_len, &vcfg, &req, &verr)) {
+        int sc = (verr.status_code >= 100 && verr.status_code <= 599) ? verr.status_code : 400;
+        send_json_error(conn, sc, verr.message ? verr.message : "invalid request");
         free(body);
-        send_json_error(conn, 400, "invalid JSON");
-        return 400;
+        return sc;
     }
-
-    yyjson_val *root = yyjson_doc_get_root(doc);
-    if (!root || !yyjson_is_obj(root)) {
-        yyjson_doc_free(doc);
-        free(body);
-        send_json_error(conn, 400, "root must be an object");
-        return 400;
-    }
-
-    // pages[]
-    yyjson_val *pages = yyjson_obj_get(root, "pages");
-    if (!pages || !yyjson_is_arr(pages)) {
-        yyjson_doc_free(doc);
-        free(body);
-        send_json_error(conn, 400, "field 'pages' must be an array");
-        return 400;
-    }
-
-    size_t n_pages = yyjson_arr_size(pages);
-    if (n_pages == 0) {
-        yyjson_doc_free(doc);
-        free(body);
-        send_json_error(conn, 400, "'pages' must not be empty");
-        return 400;
-    }
-    if (n_pages > 100) {
-        yyjson_doc_free(doc);
-        free(body);
-        send_json_error(conn, 413, "too many pages (max 100)");
-        return 413;
-    }
-
-    // options
-    yyjson_val *opt = yyjson_obj_get(root, "options");
-    bool include_bigrams = json_get_bool(opt, "includeBigrams", true);
-    bool per_page_results = json_get_bool(opt, "perPageResults", true);
-    app_pipeline_t pipeline = APP_PIPELINE_AUTO;
-
-    // optional: pipeline override from request options
-    if (opt && yyjson_is_obj(opt)) {
-        yyjson_val *p = yyjson_obj_get(opt, "pipeline");
-        if (p && yyjson_is_str(p)) {
-            int ok = 1;
-            pipeline = app_pipeline_from_str(yyjson_get_str(p), &ok);
-            if (!ok) {
-                yyjson_doc_free(doc);
-                free(body);
-                send_json_error(conn, 400, "invalid options.pipeline (use auto|string|id)");
-                return 400;
-            }
-        }
-    }
-
 
     // k (TopK) – API default 20
-    int k = 20;
+    size_t k = 20;
 
-    // domain (optional)
-    const char *domain = NULL;
-    yyjson_val *jd = yyjson_obj_get(root, "domain");
-    if (jd && yyjson_is_str(jd)) domain = yyjson_get_str(jd);
-
-    // build app_page_t[]
-    app_page_t *pp = (app_page_t *)calloc(n_pages, sizeof(app_page_t));
-    if (!pp) {
-        yyjson_doc_free(doc);
-        free(body);
-        send_json_error(conn, 500, "out of memory");
-        return 500;
-    }
-
-    size_t idx = 0;
-    yyjson_val *page;
-    yyjson_arr_iter it = yyjson_arr_iter_with(pages);
-    while ((page = yyjson_arr_iter_next(&it))) {
-        if (!yyjson_is_obj(page)) {
-            free(pp);
-            yyjson_doc_free(doc);
-            free(body);
-            send_json_error(conn, 400, "each page must be an object");
-            return 400;
-        }
-
-        yyjson_val *t = yyjson_obj_get(page, "text");
-        if (!t || !yyjson_is_str(t)) {
-            free(pp);
-            yyjson_doc_free(doc);
-            free(body);
-            send_json_error(conn, 400, "each page must have field 'text' (string)");
-            return 400;
-        }
-
-        yyjson_val *jid   = yyjson_obj_get(page, "id");
-        yyjson_val *jname = yyjson_obj_get(page, "name");
-        yyjson_val *jurl  = yyjson_obj_get(page, "url");
-
-        pp[idx].id   = (jid && yyjson_is_int(jid)) ? (long long)yyjson_get_sint(jid) : 0;
-        pp[idx].name = (jname && yyjson_is_str(jname)) ? yyjson_get_str(jname) : NULL;
-        pp[idx].url  = (jurl  && yyjson_is_str(jurl))  ? yyjson_get_str(jurl)  : NULL;
-        pp[idx].text = yyjson_get_str(t);
-        idx++;
-    }
+    // pipeline: request override (if present), else AUTO
+    app_pipeline_t pipeline = req.has_pipeline_from_options
+                                ? req.pipeline_from_options
+                                : APP_PIPELINE_AUTO;
 
     // call app layer
     app_analyze_opts_t aopts = {
-        .include_bigrams  = include_bigrams,
-        .per_page_results = per_page_results,
+        .include_bigrams  = req.include_bigrams,
+        .per_page_results = req.per_page_results,
         .stopwords_path   = cfg->stopwords_path,
-        .top_k            = (size_t)k,   // API: TopK
-        .domain           = domain,
+        .top_k            = k,
+        .domain           = req.domain,   // pointer into req.doc
         .pipeline         = pipeline,
     };
 
-    app_analyze_result_t res = app_analyze_pages(pp, idx, &aopts);
-
-    free(pp);
+    app_analyze_result_t res = app_analyze_pages(req.pages, req.page_count, &aopts);
 
     int code = (res.status == 0) ? 200 : res.status;
     if (code < 100 || code > 599) code = 500;
 
     if (res.status != 0 || !res.response_doc) {
-    yyjson_doc_free(doc);
-    free(body);
-    send_json_error(conn, code, res.message ? res.message : "analysis failed");
-    return code;
+        // free validator stuff first (it owns yyjson_doc)
+        validated_request_free(&req);
+        free(body);
+
+        send_json_error(conn, code, res.message ? res.message : "analysis failed");
+        return code;
     }
 
     // Inject total request runtime into response meta (runtimeMsTotal)
@@ -313,12 +226,12 @@ static int handle_analyze(struct mg_connection *conn, void *cbdata) {
 
     yyjson_mut_obj_add_real(res.response_doc, out_meta, "runtimeMsTotal", runtime_total_ms);
 
-
     const char *out = yyjson_mut_write(res.response_doc, 0, NULL);
     if (!out) {
         yyjson_mut_doc_free(res.response_doc);
-        yyjson_doc_free(doc);
+        validated_request_free(&req);
         free(body);
+
         send_json_error(conn, 500, "failed to serialize response");
         return 500;
     }
@@ -327,8 +240,11 @@ static int handle_analyze(struct mg_connection *conn, void *cbdata) {
 
     free((void *)out);
     yyjson_mut_doc_free(res.response_doc);
-    yyjson_doc_free(doc);
+
+    // Now we can release req.doc (which may reference body) and then body.
+    validated_request_free(&req);
     free(body);
+
     return 200;
 }
 
