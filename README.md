@@ -178,17 +178,24 @@ Eine `.dockerignore`-Datei reduziert den Build-Kontext auf notwendige Dateien.
 
 ## Teststrategie
 
+Diese Teststrategie beschreibt die eingesetzten Testarten, deren Zielsetzung sowie die lokale Ausführung der Tests. Ziel ist es, Korrektheit, Stabilität und Performance der Textanalyse reproduzierbar sicherzustellen.
+
 ### Unit-Tests
 
 * Testgetriebene Entwicklung der Analyse-Komponenten
 * Tests liegen unter `tests/unit`
-* Fokus auf deterministische und reproduzierbare Ergebnisse
+* Fokus auf kleine, isolierte Funktionseinheiten (z. B. Tokenizer, Stoppwortfilter, Aggregation)
+* Deterministische und reproduzierbare Ergebnisse ohne externe Abhängigkeiten
+
+Die Unit-Tests dienen primär der funktionalen Absicherung und Regressionserkennung bei Refactorings oder algorithmischen Änderungen.
 
 ### API-Tests
 
-* Automatisierte Tests der HTTP-Schnittstelle
-* Ausführung über GitHub Actions
-* Lokal testbar über:
+* Automatisierte End-to-End-Tests der HTTP-Schnittstelle
+* Validierung von Request-Parsing, Validierung, Analysepipeline und Response-Struktur
+* Vergleich der tatsächlichen API-Antworten mit versionierten Erwartungsdaten
+
+Lokale Ausführung:
 
 ```bash
 cmake --build build --target test_api
@@ -200,6 +207,105 @@ Bei Änderungen an API-Testdaten können die erwarteten Ergebnisse neu erzeugt w
 chmod +x tests/api/scripts/regen_expected.sh
 API_URL=http://localhost:8080 tests/api/scripts/regen_expected.sh
 ```
+
+### Performance-Tests
+
+Die Performance-Tests dienen der Analyse von Laufzeit- und Speicherverhalten unter verschiedenen realistischen und synthetischen Lastszenarien.
+
+Getestet werden unter anderem:
+
+* Reine Analyse-Laufzeit (```analyze```)
+* Gesamtlaufzeit inklusive Parsing und Serialisierung (```total```)
+* Unterschiede zwischen CLI- und API-Ausführung
+* Speicherverbrauch (Peak RSS)
+* Parallele API-Anfragen (Concurrency-Tests)
+* Vergleich der Analysepipelines (```string``` vs. ```id```)
+
+Die Tests ermöglichen es, algorithmische Änderungen oder neue Speicherstrategien objektiv zu bewerten und über mehrere Versionen hinweg vergleichbar zu halten.
+
+Lokale Ausführung:
+
+#### Pipeline-Performance
+
+Misst die Laufzeit der einzelnen Analyse-Pipelines (z. B. freq, id) über verschiedene Eingabedateien. Ziel ist der Vergleich der End-to-End-Laufzeit der Kernverarbeitung unabhängig von Netzwerk- oder API-Overhead.
+
+```bash
+cmake --build build --target test_perf_pipeline
+```
+
+#### Speicherverbrauch
+
+Ermittelt den Speicherverbrauch der Analyse bei unterschiedlich großen Eingaben. Mit ```INCLUDE_LARGE=1``` werden zusätzlich sehr große Testdateien einbezogen, um Speichergrenzen und Skalierungseffekte sichtbar zu machen.
+
+```bash
+INCLUDE_LARGE=1 cmake --build build --target test_perf_mem
+```
+
+#### API-Baseline vs. Delta
+
+Vergleicht eine API-Baseline-Ausführung mit inkrementellen Änderungen (Delta). Der Fokus liegt auf der reinen Verarbeitungszeit, nicht auf Netzwerk- oder Serialisierungskosten.
+
+```bash
+cmake --build build --target test_perf_api_baseline_delta
+```
+
+#### API-Concurrency
+
+Testet die API unter paralleler Last. Ziel ist es, Auswirkungen von gleichzeitigen Requests auf Laufzeit und Ressourcenverbrauch zu analysieren. Große Eingaben können optional über ```INCLUDE_LARGE=1``` aktiviert werden.
+
+```bash
+INCLUDE_LARGE=1 cmake --build build --target test_perf_api_concurrency
+```
+
+#### Top-K Laufzeitenmessung (Detailanalyse)
+
+Da die Sortierphase als zentraler Flaschenhals identifiziert wurde, existiert eine dedizierte Messung für die Top-K-Selektion.
+
+Dabei werden in topk.c gezielt Zeitstempel an mehreren Stellen erfasst:
+
+* Kopieren der Kandidaten
+* Sortierung
+* Erzeugung der Ergebnisliste
+
+Die Messung erfolgt getrennt für:
+
+* Wort-Frequenzen (words)
+* Wortpaare (bigrams)
+
+Beispielaufruf für Top-20 (entspricht dem API-Default):
+
+```bash
+ K=20 cmake --build build --target test_topk_measure
+```
+
+Die Auswertung erfolgt statistisch über alle Top-K-Aufrufe hinweg. Entscheidend ist dabei nicht die Herkunft der Daten (Datei oder Seite), sondern ausschließlich die Anzahl der zu selektierenden Elemente (```n```). Dadurch lässt sich die Laufzeitentwicklung der Top-K-Selektion unabhängig vom Eingabeformat analysieren.
+
+### Stress-Tests
+
+Die Stress-Tests prüfen das Systemverhalten bei großen und sehr großen Eingabedaten.
+Unterschieden wird insbesondere zwischen:
+
+* Einseitigen und mehrseitigen Dokumenten
+* Stark skalierten Textmengen (z. B. durch Vervielfältigung)
+* Grenzfällen hinsichtlich Speicher- und Laufzeitlimits
+
+Ziel der Stress-Tests ist es, das Verhalten unter realitätsnahen Extrembedingungen zu analysieren, potenzielle Engpässe frühzeitig zu erkennen und die Robustheit der Implementierung für die vorgesehene Zielarchitektur abzusichern.
+
+Lokale Ausführung:
+
+```bash
+cmake --build build --target test_stress_single
+```
+
+```bash
+cmake --build build --target test_stress_multi
+```
+
+### Hinweise
+
+* Alle Tests sind für lokale Ausführung vorgesehen
+* Ergebnisse werden als CSV-Dateien abgelegt und eignen sich zur Weiterverarbeitung (z. B. Liniendiagramme)
+* Die CLI-Tests werden auch im Container ausgeführt; produktiv läuft jedoch ausschließlich die API
 
 ---
 
