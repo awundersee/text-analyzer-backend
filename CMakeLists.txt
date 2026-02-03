@@ -172,6 +172,12 @@ add_custom_target(test_topk_measure
   COMMENT "Running CLI topK performance tests"
 )
 
+add_custom_target(test_topk_measure_perf
+  COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/performance/scripts/run_perf_cli_topk_k20_id.sh
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  COMMENT "Running CLI Top-20 Comparison Performance tests"
+)
+
 add_custom_target(test_stress_single
   COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/stress/scripts/run_stress_cli_single_page.sh
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}

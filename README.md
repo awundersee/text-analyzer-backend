@@ -275,7 +275,11 @@ Die Messung erfolgt getrennt für:
 Beispielaufruf für Top-20 (entspricht dem API-Default):
 
 ```bash
- K=20 cmake --build build --target test_topk_measure
+K=20 cmake --build build --target test_topk_measure
+```
+
+```bash
+cmake --build build --target test_topk_measure_perf
 ```
 
 Die Auswertung erfolgt statistisch über alle Top-K-Aufrufe hinweg. Entscheidend ist dabei nicht die Herkunft der Daten (Datei oder Seite), sondern ausschließlich die Anzahl der zu selektierenden Elemente (```n```). Dadurch lässt sich die Laufzeitentwicklung der Top-K-Selektion unabhängig vom Eingabeformat analysieren.
