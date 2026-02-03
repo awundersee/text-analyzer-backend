@@ -31,3 +31,18 @@ void test_bigrams_with_stopwords_filtered(void) {
     free_bigram_counts(&bl);
     free_tokens(&tl);
 }
+
+void test_bigrams_do_not_bridge_over_stopwords(void) {
+    TokenList tl = tokenize("Das ist ein Test und das ist nur ein Test");
+
+    int rc = filter_stopwords(&tl, "data/stopwords_de.txt");
+    TEST_ASSERT_EQUAL_INT(0, rc);
+
+    BigramCountList bl = count_bigrams(&tl);
+
+    // wichtig: "test test" darf nicht entstehen, wenn Adjazenz aus Originaltext kommen soll
+    TEST_ASSERT_EQUAL_UINT((unsigned)0, (unsigned)get_bigram_count(&bl, "test", "test"));
+
+    free_bigram_counts(&bl);
+    free_tokens(&tl);
+}

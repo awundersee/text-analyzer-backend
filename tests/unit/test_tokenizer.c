@@ -82,6 +82,7 @@ void test_aggregate_g5_basic(void);
 
 void test_bigrams_basic(void);
 void test_bigrams_with_stopwords_filtered(void);
+void test_bigrams_do_not_bridge_over_stopwords(void);
 
 void test_bigram_aggregate_basic(void);
 
@@ -115,6 +116,7 @@ int main(void) {
     RUN_TEST(test_aggregate_g5_basic);
     RUN_TEST(test_bigrams_basic);
     RUN_TEST(test_bigrams_with_stopwords_filtered);
+    RUN_TEST(test_bigrams_do_not_bridge_over_stopwords);
     RUN_TEST(test_bigram_aggregate_basic);
     RUN_TEST(test_topk_words_order_and_truncate);
     RUN_TEST(test_topk_bigrams_order_and_truncate);
