@@ -1,6 +1,10 @@
 #include "core/id_bigrams.h"
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
+#include "core/stopwords.h"
+#include "core/bigrams.h"
+#include "core/dict.h"
 
 static size_t next_pow2(size_t x) {
   size_t p = 1;
@@ -87,4 +91,85 @@ static int idbigrams_grow(IdBigrams *b) {
 
   free(old);
   return 1;
+}
+
+static char *dup_cstr2(const char *s) {
+  if (!s) return NULL;
+  size_t n = strlen(s);
+  char *out = (char*)malloc(n + 1);
+  if (!out) return NULL;
+  memcpy(out, s, n + 1);
+  return out;
+}
+
+static int append_bigram(BigramCountList *list, const char *w1, const char *w2, uint32_t count) {
+  size_t n = list->count + 1;
+  BigramCount *nb = (BigramCount*)realloc(list->items, n * sizeof(BigramCount));
+  if (!nb) return 0;
+  list->items = nb;
+  list->items[list->count].w1 = dup_cstr2(w1);
+  list->items[list->count].w2 = dup_cstr2(w2);
+  if (!list->items[list->count].w1 || !list->items[list->count].w2) return 0;
+  list->items[list->count].count = (size_t)count;
+  list->count = n;
+  return 1;
+}
+
+static int is_all_digits_local(const char *s) {
+  if (!s || !*s) return 0;
+  for (; *s; s++) if (!isdigit((unsigned char)*s)) return 0;
+  return 1;
+}
+
+static int ignore_tok(const char *tok, const StopwordList *sw) {
+  if (!tok || !*tok) return 1;
+  if (strlen(tok) < 2) return 1;
+  if (is_all_digits_local(tok)) return 1;
+  if (sw && stopwords_contains(sw, tok)) return 1;
+  return 0;
+}
+
+int id_count_bigrams_excluding_stopwords(const TokenList *raw,
+                                        const StopwordList *sw,
+                                        Dict *dict,
+                                        BigramCountList *out_bigrams) {
+  if (!raw || !sw || !dict || !out_bigrams) return 0;
+  *out_bigrams = (BigramCountList){0};
+
+  IdBigrams bg;
+  if (!idbigrams_init(&bg, raw->count * 2 + 64)) return 0;
+
+  uint32_t prev = 0;
+  for (size_t i = 0; i < raw->count; i++) {
+    const char *t = raw->items[i];
+
+    if (ignore_tok(t, sw)) { prev = 0; continue; } // ✅ kein Bridging
+
+    uint32_t id = dict_get_or_add(dict, t);
+    if (id == 0) goto fail;
+
+    if (prev != 0) {
+      if (!idbigrams_inc(&bg, prev, id)) goto fail;
+    }
+    prev = id;
+  }
+
+  for (size_t i = 0; i < bg.cap; i++) {
+    if (!bg.entries[i].used) continue;
+    uint64_t key = bg.entries[i].key;
+    uint32_t id1 = (uint32_t)(key >> 32);
+    uint32_t id2 = (uint32_t)(key & 0xffffffffu);
+    const char *w1 = dict_word(dict, id1);
+    const char *w2 = dict_word(dict, id2);
+    if (!w1 || !w2) continue;
+    if (!append_bigram(out_bigrams, w1, w2, bg.entries[i].count)) goto fail;
+  }
+
+  idbigrams_free(&bg);
+  return 1;
+
+fail:
+  idbigrams_free(&bg);
+  free_bigram_counts(out_bigrams);
+  return 0;
 }

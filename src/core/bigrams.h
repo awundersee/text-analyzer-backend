@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include "core/tokenizer.h"
+#include "core/stopwords.h"
 
 // [NO EXTERN] simple bigram list (linear lookup; ok for now)
 typedef struct {
@@ -16,9 +17,12 @@ typedef struct {
     size_t count;
 } BigramCountList;
 
-// Build bigram frequency list from tokens (tokens are not modified).
-// Creates pairs (token[i], token[i+1]) for i = 0..count-2.
+// Original: nutzt Tokens wie sie sind (aber weiterhin minlen/digits Filter, wie in bigrams.c)
 BigramCountList count_bigrams(const TokenList *tokens);
+
+// NEU: Original-Adjazenz, aber ignoriert Paare mit Stopwords/short/digits-only (kein Bridging)
+BigramCountList count_bigrams_excluding_stopwords(const TokenList *tokens,
+                                                  const StopwordList *sw);
 
 // Free bigram list
 void free_bigram_counts(BigramCountList *list);

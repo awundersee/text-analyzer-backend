@@ -74,21 +74,36 @@ static void assert_bigrams_equal(BigramCountList *a, BigramCountList *b) {
 }
 
 static void run_parity_case(const char *text, int include_bigrams) {
-    TokenList tokens = tokenize(text);
+    // raw bleibt unverändert für natürliche Bigrams
+    TokenList raw = tokenize(text);
 
-    // In CMake wird stopwords_de.txt ins build/data/ kopiert → relativer Pfad passt
-    int rc = filter_stopwords(&tokens, "data/stopwords_de.txt");
-    TEST_ASSERT_EQUAL_INT(0, rc);
+    // Stopwords einmal laden
+    StopwordList sw = {0};
+    int sw_rc = stopwords_load(&sw, "data/stopwords_de.txt");
+    TEST_ASSERT_EQUAL_INT(0, sw_rc);
 
-    // String-Pipeline (bestehend)
-    WordCountList w_str = count_words(&tokens);
+    // filtered ist Kopie (für Words)
+    TokenList filtered = filter_stopwords_copy(&raw, "data/stopwords_de.txt");
+
+    // String-Referenz (core string)
+    WordCountList w_str = count_words(&filtered);
     BigramCountList b_str = (BigramCountList){0};
-    if (include_bigrams) b_str = count_bigrams(&tokens);
+    if (include_bigrams) {
+        b_str = count_bigrams_excluding_stopwords(&raw, &sw);
+    }
 
-    // ID-Pipeline (neu)
+    // ID-Pipeline
     WordCountList w_id = (WordCountList){0};
     BigramCountList b_id = (BigramCountList){0};
-    int ok = analyze_id_pipeline(&tokens, include_bigrams, &w_id, include_bigrams ? &b_id : NULL);
+
+    int ok = analyze_id_pipeline(
+        &filtered,
+        &raw,
+        include_bigrams ? true : false,
+        &sw,
+        &w_id,
+        include_bigrams ? &b_id : NULL
+    );
     TEST_ASSERT_TRUE(ok);
 
     // Vergleich
@@ -96,7 +111,9 @@ static void run_parity_case(const char *text, int include_bigrams) {
     if (include_bigrams) assert_bigrams_equal(&b_str, &b_id);
 
     // cleanup
-    free_tokens(&tokens);
+    free_tokens(&filtered);
+    free_tokens(&raw);
+    stopwords_free(&sw);
 
     free_word_counts(&w_str);
     if (include_bigrams) free_bigram_counts(&b_str);

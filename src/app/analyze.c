@@ -135,65 +135,78 @@ app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, 
 
     double t_analyze0 = now_ms();
 
+    StopwordList sw = {0};
+    int sw_rc = stopwords_load(&sw, stop_path);
+    if (sw_rc != 0) {
+        free(page_words);
+        free(page_bigrams);
+        free(page_metrics);
+        return fail(20, "Stopwords load failed (file missing or invalid?)");
+    }
+
     for (size_t i = 0; i < n_pages; i++) {
         const char *t = pages[i].text ? pages[i].text : "";
 
-        TokenList tokens = tokenize(t);
+        TokenList raw = tokenize(t);
 
-        int rc = filter_stopwords(&tokens, stop_path);
-        if (rc != 0) {
-            free_tokens(&tokens);
-            for (size_t k = 0; k < i; k++) free_word_counts(&page_words[k]);
-            if (include_bigrams) for (size_t k = 0; k < i; k++) free_bigram_counts(&page_bigrams[k]);
-            free(page_words);
-            free(page_bigrams);
-            free(page_metrics);
-            return fail(20, "Stopwords filter failed (file missing or invalid?)");
-        }
+        // gefilterte Kopie für Words/TopK
+        TokenList filtered = filter_stopwords_copy(&raw, stop_path);
 
-        // Metrics after stopword filtering (consistent with word/bigram counts)
-        page_metrics[i] = compute_metrics(t, tokens);
+        // Optional: Wenn du Fehler sauber unterscheiden willst, wäre es besser,
+        // filter_stopwords_copy() so zu bauen, dass es einen rc zurückgibt.
+        // Für jetzt: stopwords_load wurde oben validiert, daher ist leer = ok.
+        page_metrics[i] = compute_metrics(t, filtered);
 
+        // Domain metrics wie gehabt
         domain_metrics.charCount     += page_metrics[i].charCount;
         domain_metrics.wordCount     += page_metrics[i].wordCount;
         domain_metrics.wordCharCount += page_metrics[i].wordCharCount;
 
         if (use_id_pipeline) {
             int ok = analyze_id_pipeline(
-                &tokens,
+                &filtered,          // Words basieren auf filtered
+                &raw,               // Bigrams basieren auf raw
                 include_bigrams,
+                &sw,                // Stopwords für bigrams-excluding
                 &page_words[i],
                 include_bigrams ? &page_bigrams[i] : NULL
             );
             if (!ok) {
-                free_tokens(&tokens);
+                free_tokens(&filtered);
+                free_tokens(&raw);
                 for (size_t k = 0; k < i; k++) free_word_counts(&page_words[k]);
                 if (include_bigrams) for (size_t k = 0; k < i; k++) free_bigram_counts(&page_bigrams[k]);
                 free(page_words);
                 free(page_bigrams);
                 free(page_metrics);
+                stopwords_free(&sw);
                 return fail(30, "ID pipeline failed (out of memory?)");
             }
         } else {
             int ok = analyze_string_pipeline(
-                &tokens,
+                &filtered,
+                &raw,
                 include_bigrams,
+                &sw,
                 &page_words[i],
                 include_bigrams ? &page_bigrams[i] : NULL
-            );
+            );      
             if (!ok) {
-                free_tokens(&tokens);
+                free_tokens(&filtered);
+                free_tokens(&raw);
                 for (size_t k = 0; k < i; k++) free_word_counts(&page_words[k]);
                 if (include_bigrams) for (size_t k = 0; k < i; k++) free_bigram_counts(&page_bigrams[k]);
                 free(page_words);
                 free(page_bigrams);
                 free(page_metrics);
+                stopwords_free(&sw);
                 return fail(31, "String pipeline failed (out of memory?)");
             }
         }
 
 
-        free_tokens(&tokens);
+        free_tokens(&filtered);
+        free_tokens(&raw);
     }
 
     WordCountList domain_words = aggregate_word_counts(page_words, n_pages);
@@ -231,6 +244,7 @@ app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, 
         free_top_k_words(&top_words);
 
         free(page_metrics);
+        stopwords_free(&sw);
         return fail(12, "Out of memory (response)");
     }
 
@@ -322,6 +336,8 @@ app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, 
         free_aggregated_bigram_counts(&domain_bigrams);
         free_top_k_bigrams(&top_bigs);
     }
+
+    stopwords_free(&sw);
 
     app_analyze_result_t ok = {0};
     ok.status = 0;

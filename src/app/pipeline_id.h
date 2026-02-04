@@ -1,17 +1,22 @@
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 #include "core/tokenizer.h"
 #include "core/stopwords.h"
 #include "core/freq.h"
 #include "core/bigrams.h"
 
-// Analysiert bereits tokenisierten Text (Tokens sollen bereits stopword-gefiltert sein)
-// und liefert WordCountList / BigramCountList (Strings), damit Aggregation/TopK unverändert bleibt.
+// Analysiert tokenisierten Text.
+// - filtered: stopword-/digits-/minlen-gefilterte Tokenliste (für Words)
+// - raw: originale Tokenfolge (für natürliche Bigrams)
+// - sw: geladene StopwordList (für bigram-excluding)
 int analyze_id_pipeline(
-  const TokenList *tokens,
-  int include_bigrams,
+  const TokenList *filtered,
+  const TokenList *raw,
+  bool include_bigrams,
+  const StopwordList *sw,
   WordCountList *out_words,
   BigramCountList *out_bigrams
 );

@@ -2,6 +2,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "core/dict.h"
+#include "core/tokenizer.h"
+#include "core/freq.h"
+
+int id_count_words(const TokenList *filtered, Dict *dict, WordCountList *out_words);
+
 typedef struct {
   uint32_t *counts;  // index id-1
   size_t cap;
