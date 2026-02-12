@@ -6,12 +6,14 @@
 #include "core/bigrams.h"
 #include "core/dict.h"
 
+/* Utility: ensure power-of-two capacity for mask-based probing. */
 static size_t next_pow2(size_t x) {
   size_t p = 1;
   while (p < x) p <<= 1;
   return p;
 }
 
+/* 64-bit mix for stable hashing of (id1,id2) packed keys. */
 static uint64_t mix64(uint64_t x) {
   x ^= x >> 33;
   x *= 0xff51afd7ed558ccdULL;
@@ -26,6 +28,8 @@ static int idbigrams_grow(IdBigrams *b);
 int idbigrams_init(IdBigrams *b, size_t initial_cap) {
   if (!b) return 0;
   memset(b, 0, sizeof(*b));
+
+  /* ID-bigram table: open addressing, power-of-two capacity. */
   b->cap = next_pow2(initial_cap < 64 ? 64 : initial_cap);
   b->entries = (BigEntry*)calloc(b->cap, sizeof(BigEntry));
   return b->entries != NULL;
@@ -39,10 +43,13 @@ void idbigrams_free(IdBigrams *b) {
 
 int idbigrams_inc(IdBigrams *b, uint32_t id1, uint32_t id2) {
   if (!b || id1 == 0 || id2 == 0) return 0;
+
+  /* Grow at ~0.7 load factor to keep probing cheap. */
   if (b->size * 10 >= b->cap * 7) {
     if (!idbigrams_grow(b)) return 0;
   }
 
+  /* Pack (id1,id2) into one key to avoid string concatenation. */
   uint64_t key = ((uint64_t)id1 << 32) | (uint64_t)id2;
   uint64_t h = mix64(key);
   size_t mask = b->cap - 1;
@@ -63,6 +70,7 @@ int idbigrams_inc(IdBigrams *b, uint32_t id1, uint32_t id2) {
   return 1;
 }
 
+/* Rehash into a table with doubled capacity (measurement point for peak RSS). */
 static int idbigrams_grow(IdBigrams *b) {
   size_t old_cap = b->cap;
   BigEntry *old = b->entries;
@@ -93,6 +101,7 @@ static int idbigrams_grow(IdBigrams *b) {
   return 1;
 }
 
+/* Local helper: duplicate dict words when materializing output. */
 static char *dup_cstr2(const char *s) {
   if (!s) return NULL;
   size_t n = strlen(s);
@@ -102,6 +111,7 @@ static char *dup_cstr2(const char *s) {
   return out;
 }
 
+/* Materialize (id1,id2,count) into string-based BigramCountList. */
 static int append_bigram(BigramCountList *list, const char *w1, const char *w2, uint32_t count) {
   size_t n = list->count + 1;
   BigramCount *nb = (BigramCount*)realloc(list->items, n * sizeof(BigramCount));
@@ -121,6 +131,7 @@ static int is_all_digits_local(const char *s) {
   return 1;
 }
 
+/* Same drop rules as word filtering: short tokens, digits-only, stopwords. */
 static int ignore_tok(const char *tok, const StopwordList *sw) {
   if (!tok || !*tok) return 1;
   if (strlen(tok) < 2) return 1;
@@ -136,6 +147,7 @@ int id_count_bigrams_excluding_stopwords(const TokenList *raw,
   if (!raw || !sw || !dict || !out_bigrams) return 0;
   *out_bigrams = (BigramCountList){0};
 
+  /* ID-based bigram counting stage (memory-optimized pipeline). */
   IdBigrams bg;
   if (!idbigrams_init(&bg, raw->count * 2 + 64)) return 0;
 
@@ -143,7 +155,8 @@ int id_count_bigrams_excluding_stopwords(const TokenList *raw,
   for (size_t i = 0; i < raw->count; i++) {
     const char *t = raw->items[i];
 
-    if (ignore_tok(t, sw)) { prev = 0; continue; } // ✅ kein Bridging
+    /* No bridging across dropped tokens (keeps bigrams local to valid runs). */
+    if (ignore_tok(t, sw)) { prev = 0; continue; }
 
     uint32_t id = dict_get_or_add(dict, t);
     if (id == 0) goto fail;
@@ -154,6 +167,7 @@ int id_count_bigrams_excluding_stopwords(const TokenList *raw,
     prev = id;
   }
 
+  /* Materialize hash table into output list (string-based API contract). */
   for (size_t i = 0; i < bg.cap; i++) {
     if (!bg.entries[i].used) continue;
     uint64_t key = bg.entries[i].key;

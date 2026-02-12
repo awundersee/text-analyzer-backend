@@ -8,10 +8,14 @@
 #include "core/freq.h"
 #include "core/bigrams.h"
 
-// Analysiert tokenisierten Text.
-// - filtered: stopword-/digits-/minlen-gefilterte Tokenliste (für Words)
-// - raw: originale Tokenfolge (für natürliche Bigrams)
-// - sw: geladene StopwordList (für bigram-excluding)
+/* ID-based analysis pipeline entrypoint.
+ *
+ * filtered: token stream used for word counts (stopwords/short/digits removed)
+ * raw:      original token stream used for adjacency-based bigrams
+ * sw:       loaded stopword list used by bigram exclusion (no bridging)
+ *
+ * include_bigrams controls whether out_bigrams is populated.
+ */
 int analyze_id_pipeline(
   const TokenList *filtered,
   const TokenList *raw,

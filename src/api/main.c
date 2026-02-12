@@ -1,7 +1,3 @@
-// src/api/main.c
-// [EXTERN] CivetWeb: HTTP server (MIT)
-// [EXTERN] yyjson: JSON parser/serializer (MIT)
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,6 +15,7 @@ typedef struct {
     const char *stopwords_path;
 } AppConfig;
 
+/* Request-level timer used to compute runtimeMsTotal. */
 static double now_ms(void) {
 #if defined(CLOCK_MONOTONIC)
     struct timespec ts;
@@ -38,6 +35,9 @@ static const char *get_env_or_default(const char *key, const char *def) {
     return (v && v[0] != '\0') ? v : def;
 }
 
+/* Reads request body into a NUL-terminated buffer.
+ * Enforces a hard 10MB limit to protect memory usage.
+ */
 static int read_request_body(struct mg_connection *conn, char **out_buf, size_t *out_len) {
     if (!conn || !out_buf || !out_len) return 0;
 
@@ -45,7 +45,7 @@ static int read_request_body(struct mg_connection *conn, char **out_buf, size_t 
     long long cl = ri ? ri->content_length : -1;
 
     if (cl < 0) {
-        // no content-length provided; read in chunks until EOF (best effort)
+        /* No Content-Length: best-effort chunked read (still bounded by allocation growth). */
         size_t cap = 8192;
         size_t len = 0;
         char *buf = (char *)malloc(cap);
@@ -76,7 +76,7 @@ static int read_request_body(struct mg_connection *conn, char **out_buf, size_t 
     }
 
     if (cl > 10 * 1024 * 1024) {
-        // 10MB safety limit
+        /* Hard safety limit (API boundary). */
         errno = EFBIG;
         return 0;
     }
@@ -109,6 +109,7 @@ static const char *reason_phrase(int code) {
     }
 }
 
+/* Sends pre-serialized JSON with minimal headers (no caching). */
 static void send_json(struct mg_connection *conn, int status_code, const char *json_body) {
     if (!conn || !json_body) return;
     mg_printf(conn,
@@ -121,6 +122,7 @@ static void send_json(struct mg_connection *conn, int status_code, const char *j
               status_code, reason_phrase(status_code), strlen(json_body), json_body);
 }
 
+/* Error response helper (keeps API output JSON-shaped). */
 static void send_json_error(struct mg_connection *conn, int status_code, const char *msg) {
     yyjson_mut_doc *doc = yyjson_mut_doc_new(NULL);
     yyjson_mut_val *root = yyjson_mut_obj(doc);
@@ -145,6 +147,8 @@ static int handle_health(struct mg_connection *conn, void *cbdata) {
 
 static int handle_analyze(struct mg_connection *conn, void *cbdata) {
     const AppConfig *cfg = (const AppConfig *)cbdata;
+
+    /* Measurement point: total request runtime (includes parse/validate/analyze/serialize). */
     double t_req0 = now_ms();
 
     char *body = NULL;
@@ -160,12 +164,12 @@ static int handle_analyze(struct mg_connection *conn, void *cbdata) {
         return 400;
     }
 
-    // --- shared parse + validate (API strict profile) ---
+    /* Shared boundary validation (API strict profile). */
     req_validate_cfg_t vcfg = {
         .max_pages = 100,
         .max_bytes = 10 * 1024 * 1024,  // optional (read_request_body already enforces 10MB)
         .allow_root_array = false,
-        .allow_options_pipeline = true,
+        .allow_options_pipeline = true, // request may override pipeline selection
         .default_include_bigrams = true,
         .default_per_page_results = true
     };
@@ -173,6 +177,7 @@ static int handle_analyze(struct mg_connection *conn, void *cbdata) {
     validated_request_t req;
     req_error_t verr = {0};
 
+    /* IMPORTANT: keep `body` buffer alive until validated_request_free(&req). */
     if (!request_parse_and_validate(body, body_len, &vcfg, &req, &verr)) {
         int sc = (verr.status_code >= 100 && verr.status_code <= 599) ? verr.status_code : 400;
         send_json_error(conn, sc, verr.message ? verr.message : "invalid request");
@@ -180,15 +185,14 @@ static int handle_analyze(struct mg_connection *conn, void *cbdata) {
         return sc;
     }
 
-    // k (TopK) – API default 20
+    /* API policy: default Top-K (kept small to limit response size). */
     size_t k = 20;
 
-    // pipeline: request override (if present), else AUTO
+    /* Pipeline selection: request override if present, otherwise AUTO. */
     app_pipeline_t pipeline = req.has_pipeline_from_options
                                 ? req.pipeline_from_options
                                 : APP_PIPELINE_AUTO;
 
-    // call app layer
     app_analyze_opts_t aopts = {
         .include_bigrams  = req.include_bigrams,
         .per_page_results = req.per_page_results,
@@ -198,13 +202,13 @@ static int handle_analyze(struct mg_connection *conn, void *cbdata) {
         .pipeline         = pipeline,
     };
 
+    /* Core analysis stage (pipeline switch happens in app layer). */
     app_analyze_result_t res = app_analyze_pages(req.pages, req.page_count, &aopts);
 
     int code = (res.status == 0) ? 200 : res.status;
     if (code < 100 || code > 599) code = 500;
 
     if (res.status != 0 || !res.response_doc) {
-        // free validator stuff first (it owns yyjson_doc)
         validated_request_free(&req);
         free(body);
 
@@ -212,7 +216,7 @@ static int handle_analyze(struct mg_connection *conn, void *cbdata) {
         return code;
     }
 
-    // Inject total request runtime into response meta (runtimeMsTotal)
+    /* Inject end-to-end request time into meta (runtimeMsTotal). */
     double t_req1 = now_ms();
     double runtime_total_ms = round3(t_req1 - t_req0);
 
@@ -241,7 +245,7 @@ static int handle_analyze(struct mg_connection *conn, void *cbdata) {
     free((void *)out);
     yyjson_mut_doc_free(res.response_doc);
 
-    // Now we can release req.doc (which may reference body) and then body.
+    /* Cleanup order matters: req.doc may reference body. */
     validated_request_free(&req);
     free(body);
 
@@ -251,6 +255,7 @@ static int handle_analyze(struct mg_connection *conn, void *cbdata) {
 int main(int argc, char **argv) {
     (void)argc; (void)argv;
 
+    /* Configuration via env to keep container deployments simple. */
     const char *port = get_env_or_default("PORT", "8080");
     const char *stopwords = get_env_or_default("STOPWORDS_FILE", "data/stopwords_de.txt");
 
@@ -273,6 +278,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    /* Minimal API surface: health + analyze. */
     mg_set_request_handler(ctx, "/health", handle_health, &cfg);
     mg_set_request_handler(ctx, "/analyze", handle_analyze, &cfg);
 
@@ -281,7 +287,7 @@ int main(int argc, char **argv) {
     printf("Endpoints: GET /health, POST /analyze\n");
     fflush(stdout);
 
-    // Run forever
+    /* Run forever (container-style). */
     for (;;) {
         sleep(1);
     }

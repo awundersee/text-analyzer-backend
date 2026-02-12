@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Aggregation output owns its own copies of strings. */
 static char *dup_cstr(const char *s) {
     if (!s) return NULL;
     size_t n = strlen(s);
@@ -12,6 +13,7 @@ static char *dup_cstr(const char *s) {
     return out;
 }
 
+/* Compare helper for (w1,w2) matching during merge. */
 static int bigram_equals_parts(const BigramCount *b, const char *w1, const char *w2) {
     return b && b->w1 && b->w2 && w1 && w2 &&
            strcmp(b->w1, w1) == 0 && strcmp(b->w2, w2) == 0;
@@ -24,6 +26,7 @@ BigramCountList aggregate_bigram_counts(
     BigramCountList out = (BigramCountList){0};
     if (!lists || list_count == 0) return out;
 
+    /* Domain aggregation stage: merges per-page bigram counts. */
     size_t cap = 16;
     out.items = (BigramCount *)calloc(cap, sizeof(BigramCount));
     if (!out.items) return (BigramCountList){0};
@@ -34,10 +37,11 @@ BigramCountList aggregate_bigram_counts(
             const char *w1 = src->items[j].w1;
             const char *w2 = src->items[j].w2;
             size_t cnt = src->items[j].count;
+
             if (!w1 || !w2 || w1[0] == '\0' || w2[0] == '\0') continue;
             if (cnt == 0) continue;
 
-            // linear search
+            /* Linear merge lookup; acceptable for small top-N lists. */
             size_t found = (size_t)-1;
             for (size_t k = 0; k < out.count; k++) {
                 if (bigram_equals_parts(&out.items[k], w1, w2)) {
@@ -51,7 +55,7 @@ BigramCountList aggregate_bigram_counts(
                 continue;
             }
 
-            // new bigram
+            /* Insert new aggregated bigram entry (dynamic growth). */
             if (out.count == cap) {
                 cap *= 2;
                 BigramCount *tmp = (BigramCount *)realloc(out.items, cap * sizeof(BigramCount));
@@ -77,6 +81,7 @@ BigramCountList aggregate_bigram_counts(
     return out;
 }
 
+/* Free helper for aggregated (domain-level) bigram list. */
 void free_aggregated_bigram_counts(BigramCountList *list) {
     if (!list || !list->items) return;
     for (size_t i = 0; i < list->count; i++) {

@@ -5,7 +5,10 @@
 #include "core/tokenizer.h"
 #include "core/stopwords.h"
 
-// [NO EXTERN] simple bigram list (linear lookup; ok for now)
+/*
+ * String-based bigram frequency representation.
+ * Baseline bigram counting in the string pipeline.
+ */
 typedef struct {
     char *w1;
     char *w2;
@@ -17,17 +20,23 @@ typedef struct {
     size_t count;
 } BigramCountList;
 
-// Original: nutzt Tokens wie sie sind (aber weiterhin minlen/digits Filter, wie in bigrams.c)
+/*
+ * Count bigrams from tokens (string-based pipeline).
+ * Applies the same token validity rules as bigrams.c (minlen/digits).
+ */
 BigramCountList count_bigrams(const TokenList *tokens);
 
-// NEU: Original-Adjazenz, aber ignoriert Paare mit Stopwords/short/digits-only (kein Bridging)
+/*
+ * Count bigrams while excluding stopwords and invalid tokens.
+ * No bridging: dropped tokens break adjacency (keeps original runs intact).
+ */
 BigramCountList count_bigrams_excluding_stopwords(const TokenList *tokens,
                                                   const StopwordList *sw);
 
-// Free bigram list
+/* Release memory owned by BigramCountList. */
 void free_bigram_counts(BigramCountList *list);
 
-// Helper: get count for a bigram (0 if not found)
+/* Lookup helper (returns 0 if not present). */
 size_t get_bigram_count(const BigramCountList *list, const char *w1, const char *w2);
 
 #endif

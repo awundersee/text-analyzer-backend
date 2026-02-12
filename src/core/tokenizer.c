@@ -4,11 +4,16 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Defines token boundaries for the string-based pipeline.
+ * Splits on whitespace and ASCII punctuation (G2 requirement).
+ */
 static int is_split_char(unsigned char c) {
-    // G2: split on whitespace OR ASCII punctuation
     return isspace(c) || ispunct(c);
 }
 
+/* Detects common UTF-8 dash variants (– — ―).
+ * Treated as hard token boundaries to avoid merged tokens.
+ */
 static size_t utf8_dash_len(const unsigned char *s, size_t remaining) {
     if (!s || remaining < 3) return 0;
     if (s[0] == 0xE2 && s[1] == 0x80) {
@@ -19,12 +24,18 @@ static size_t utf8_dash_len(const unsigned char *s, size_t remaining) {
 
 TokenList tokenize_with_stats(const char *text, TokenStats *stats) {
     TokenList out = (TokenList){0};
+
+    /* Tokenizer is the first processing stage.
+     * Stats include stopwords (filtering happens later).
+     */
     if (stats) { stats->wordCount = 0; stats->wordCharCount = 0; }
     if (!text) return out;
 
     size_t len = strlen(text);
 
-    // 1) first pass: count tokens (wie bisher)
+    /* Pass 1: count tokens (no allocations yet).
+     * Allows exact-sized allocation for token array.
+     */
     size_t count = 0;
     size_t i = 0;
     while (i < len) {
@@ -52,7 +63,9 @@ TokenList tokenize_with_stats(const char *text, TokenStats *stats) {
     if (!out.items) return (TokenList){0};
     out.count = count;
 
-    // 2) second pass: extract tokens + stats
+    /* Pass 2: extract tokens and normalize to lowercase.
+     * Allocation happens per token.
+     */
     i = 0;
     size_t ti = 0;
 
@@ -79,6 +92,7 @@ TokenList tokenize_with_stats(const char *text, TokenStats *stats) {
 
         char *tok = (char *)malloc(tlen + 1);
         if (!tok) {
+            /* Allocation failure aborts tokenization safely. */
             out.count = ti;
             free_tokens(&out);
             return (TokenList){0};
@@ -86,6 +100,7 @@ TokenList tokenize_with_stats(const char *text, TokenStats *stats) {
 
         for (size_t k = 0; k < tlen; k++) {
             unsigned char c = (unsigned char)text[start + k];
+            /* ASCII-only lowercase normalization. */
             if (c >= 'A' && c <= 'Z') c = (unsigned char)(c - 'A' + 'a');
             tok[k] = (char)c;
         }
@@ -103,10 +118,12 @@ TokenList tokenize_with_stats(const char *text, TokenStats *stats) {
     return out;
 }
 
+/* Convenience wrapper for the default string-based pipeline. */
 TokenList tokenize(const char *text) {
     return tokenize_with_stats(text, NULL);
 }
 
+/* Releases all memory allocated during tokenization. */
 void free_tokens(TokenList *list) {
     if (!list || !list->items) return;
 

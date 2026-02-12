@@ -6,10 +6,16 @@
 #include "core/freq.h"
 #include "core/bigrams.h"
 
-// Analysiert tokenisierten Text.
-// - filtered: stopword-/digits-/minlen-gefilterte Tokenliste (für Words)
-// - raw: originale Tokenfolge (für natürliche Bigrams)
-// - sw: geladene StopwordList (für bigram-excluding)
+/* String-based analysis pipeline.
+ *
+ * Responsibilities:
+ * - Words: counted from `filtered` tokens (stopwords/digits/minlen already removed).
+ * - Bigrams: derived from `raw` tokens using stopword-aware exclusion
+ *   (original adjacency, no bridging over ignored tokens).
+ *
+ * Used directly when APP_PIPELINE_STRING is selected or when AUTO
+ * chooses the string pipeline (typically for smaller inputs).
+ */
 int analyze_string_pipeline(
   const TokenList *filtered,
   const TokenList *raw,

@@ -20,6 +20,7 @@ static int ends_with_json(const char *name) {
     return n >= 5 && strcmp(name + (n - 5), ".json") == 0;
 }
 
+/* Reads full JSON input (batch uses file-based requests). */
 static char *read_file_all(const char *path, size_t *out_len) {
     FILE *f = fopen(path, "rb");
     if (!f) return NULL;
@@ -41,6 +42,7 @@ static char *read_file_all(const char *path, size_t *out_len) {
     return buf;
 }
 
+/* Measurement point for batch perf runs (end-to-end per file). */
 static double now_ms(void) {
 #if defined(CLOCK_MONOTONIC)
     struct timespec ts;
@@ -56,15 +58,14 @@ static inline double round3(double v) {
 }
 
 static int ensure_dir_exists(const char *dir) {
-    // mkdir returns 0 on success, -1 on error
-    // If it already exists, errno == EEXIST is fine.
+    /* mkdir returns 0 on success, -1 on error; EEXIST is fine. */
     if (mkdir(dir, 0755) == 0) return 0;
     if (errno == EEXIST) return 0;
     return -1;
 }
 
+/* Writes a minimal error response so batch consumers can still parse JSON. */
 static int write_error_json(const char *out_path, const char *input_name, const char *message) {
-    // Minimal error JSON for batch mode
     FILE *f = fopen(out_path, "wb");
     if (!f) return -1;
     fprintf(f,
@@ -80,6 +81,7 @@ static int write_error_json(const char *out_path, const char *input_name, const 
     return 0;
 }
 
+/* Writes pretty response JSON (batch artifacts are meant to be inspected). */
 static int write_response_doc(const char *out_path, yyjson_mut_doc *doc) {
     yyjson_write_err werr;
     size_t out_len = 0;
@@ -111,15 +113,16 @@ int cli_run_batch(const char *in_dir, const char *out_dir, int continue_on_error
         return 2;
     }
 
+    /* Stopwords path is injected for repeatable batch runs. */
     const char *sw = getenv("STOPWORDS_FILE");
     if (!sw) sw = "data/stopwords_de.txt";
 
-    // CLI relaxed profile (batch): no limits, allow root array
+    /* Shared boundary validation with CLI/batch relaxed limits. */
     req_validate_cfg_t vcfg = {
         .max_pages = 0,
         .max_bytes = 0,
         .allow_root_array = true,
-        .allow_options_pipeline = false, // keep CLI behavior
+        .allow_options_pipeline = false, // CLI selects pipeline externally
         .default_include_bigrams = true,
         .default_per_page_results = true
     };
@@ -134,10 +137,11 @@ int cli_run_batch(const char *in_dir, const char *out_dir, int continue_on_error
         char in_path[4096];
         snprintf(in_path, sizeof(in_path), "%s/%s", in_dir, ent->d_name);
 
-        // output: <out_dir>/<file>.result.json
+        /* Output naming: <out_dir>/<file>.result.json */
         char out_path[4096];
         snprintf(out_path, sizeof(out_path), "%s/%s.result.json", out_dir, ent->d_name);
 
+        /* Measurement point: per-file total runtime. */
         double t0 = now_ms();
 
         size_t json_len = 0;
@@ -153,7 +157,7 @@ int cli_run_batch(const char *in_dir, const char *out_dir, int continue_on_error
         validated_request_t req;
         req_error_t verr = {0};
 
-        // IMPORTANT: keep `json` buffer alive until validated_request_free(&req)
+        /* IMPORTANT: keep `json` buffer alive until validated_request_free(&req). */
         if (!request_parse_and_validate(json, json_len, &vcfg, &req, &verr)) {
             const char *msg = verr.message ? verr.message : "invalid request";
             fprintf(stderr, "[ERR] %s: %s\n", ent->d_name, msg);
@@ -164,7 +168,7 @@ int cli_run_batch(const char *in_dir, const char *out_dir, int continue_on_error
             continue;
         }
 
-        // FULL output for batch: top_k = 0
+        /* Batch uses full output (top_k=0) for later inspection/aggregation. */
         app_analyze_opts_t opts = {
             .include_bigrams  = req.include_bigrams,
             .per_page_results = req.per_page_results,
@@ -179,7 +183,7 @@ int cli_run_batch(const char *in_dir, const char *out_dir, int continue_on_error
         double t1 = now_ms();
         double runtime_total_ms = round3(t1 - t0);
 
-        // Inject runtimeMsTotal into meta (only if response exists)
+        /* Inject per-file end-to-end runtime into meta (batch-only metric). */
         if (res.response_doc) {
             yyjson_mut_val *root = yyjson_mut_doc_get_root(res.response_doc);
             yyjson_mut_val *meta = root ? yyjson_mut_obj_get(root, "meta") : NULL;
@@ -221,6 +225,7 @@ int cli_run_batch(const char *in_dir, const char *out_dir, int continue_on_error
 
         printf("[OK] %s -> %s\n", in_path, out_path);
 
+        /* Cleanup order matters: validated_request_t may reference json/doc strings. */
         yyjson_mut_doc_free(res.response_doc);
         validated_request_free(&req);
         free(json);

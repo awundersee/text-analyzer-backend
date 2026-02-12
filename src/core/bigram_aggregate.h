@@ -4,14 +4,16 @@
 #include <stddef.h>
 #include "core/bigrams.h"
 
-// [NO EXTERN]
-// Aggregates multiple BigramCountLists into a single BigramCountList.
+/*
+ * Domain-level aggregation for bigram results.
+ * Merges per-page BigramCountLists into a single combined list.
+ */
 BigramCountList aggregate_bigram_counts(
     const BigramCountList *lists,
     size_t list_count
 );
 
-// Free helper for aggregated list
+/* Release memory of an aggregated BigramCountList. */
 void free_aggregated_bigram_counts(BigramCountList *list);
 
 #endif

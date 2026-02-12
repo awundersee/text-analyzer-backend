@@ -22,7 +22,7 @@ static void to_lower_ascii(char *s) {
     }
 }
 
-// strdup ist POSIX; falls du strikt ISO-C willst, ersetze durch malloc+memcpy
+/* Small ISO-C helper (avoids relying on POSIX strdup). */
 static char *dup_cstr(const char *s) {
     if (!s) return NULL;
     size_t n = strlen(s);
@@ -45,6 +45,7 @@ static int is_too_short(const char *s, size_t min_len) {
     return strlen(s) < min_len;
 }
 
+/* Linear lookup is the current stopword strategy (swap to hashset later). */
 static int is_stopword_linear(const char *token, char **stopwords, size_t count) {
     for (size_t i = 0; i < count; i++) {
         if (strcmp(token, stopwords[i]) == 0) return 1;
@@ -52,6 +53,7 @@ static int is_stopword_linear(const char *token, char **stopwords, size_t count)
     return 0;
 }
 
+/* Central token filtering rule-set (applied before frequency/bigram stages). */
 static int should_drop_token(const char *tok, const StopwordList *sw) {
     const size_t MIN_TOKEN_LEN = 2;
 
@@ -85,6 +87,7 @@ int stopwords_load(StopwordList *out, const char *stopwords_file_path) {
 
     char line[256];
     while (fgets(line, sizeof(line), f)) {
+        /* Normalize input for stable comparisons with tokenizer output. */
         rstrip_newline(line);
         to_lower_ascii(line);
         if (line[0] == '\0') continue;
@@ -136,6 +139,7 @@ int stopwords_contains(const StopwordList *sw, const char *token) {
 int filter_stopwords(TokenList *tokens, const char *stopwords_file_path) {
     if (!tokens || !tokens->items || tokens->count == 0) return 0;
 
+    /* Filtering stage between tokenization and counting (in-place variant). */
     StopwordList sw = {0};
     int rc = stopwords_load(&sw, stopwords_file_path);
     if (rc != 0) return rc;
@@ -166,12 +170,13 @@ TokenList filter_stopwords_copy(const TokenList *in, const char *stopwords_file_
     TokenList out = (TokenList){0};
     if (!in || !in->items || in->count == 0) return out;
 
+    /* Non-destructive variant for pipelines that must keep original tokens. */
     StopwordList sw = {0};
     if (stopwords_load(&sw, stopwords_file_path) != 0) {
         return (TokenList){0};
     }
 
-    // 1) count allowed tokens
+    /* Pass 1: count kept tokens to size the output array exactly. */
     size_t allowed = 0;
     for (size_t i = 0; i < in->count; i++) {
         const char *tok = in->items[i];
@@ -189,7 +194,7 @@ TokenList filter_stopwords_copy(const TokenList *in, const char *stopwords_file_
         return (TokenList){0};
     }
 
-    // 2) duplicate allowed tokens
+    /* Pass 2: duplicate kept tokens (ownership belongs to out). */
     size_t wi = 0;
     for (size_t i = 0; i < in->count; i++) {
         const char *tok = in->items[i];
@@ -198,7 +203,7 @@ TokenList filter_stopwords_copy(const TokenList *in, const char *stopwords_file_
         out.items[wi] = dup_cstr(tok);
         if (!out.items[wi]) {
             out.count = wi;
-            free_tokens(&out);       // nutzt deinen tokenizer-free, passt hier
+            free_tokens(&out);
             stopwords_free(&sw);
             return (TokenList){0};
         }

@@ -1,4 +1,3 @@
-// src/app/analyze.c
 #include "app/analyze.h"
 #include "app/pipeline_id.h"
 #include "app/pipeline_string.h"
@@ -18,8 +17,10 @@
 
 #include "yyjson.h"
 
+/* AUTO pipeline switch threshold (total input chars). */
 #define PIPELINE_THRESHOLD_CHARS (256 * 1024) // 256 KB
 
+/* Measurement point for meta.runtimeMsAnalyze (core analysis only). */
 static double now_ms(void) {
 #if defined(CLOCK_MONOTONIC)
     struct timespec ts;
@@ -38,6 +39,7 @@ static app_analyze_result_t fail(int status, const char *msg) {
     return r;
 }
 
+/* JSON view helper: serializes WordCountList into response schema. */
 static void json_add_word_list(yyjson_mut_doc *doc, yyjson_mut_val *arr, const WordCountList *list) {
     for (size_t i = 0; i < list->count; i++) {
         yyjson_mut_val *obj = yyjson_mut_obj(doc);
@@ -48,6 +50,7 @@ static void json_add_word_list(yyjson_mut_doc *doc, yyjson_mut_val *arr, const W
     }
 }
 
+/* JSON view helper: serializes BigramCountList into response schema. */
 static void json_add_bigram_list(yyjson_mut_doc *doc, yyjson_mut_val *arr, const BigramCountList *list) {
     for (size_t i = 0; i < list->count; i++) {
         yyjson_mut_val *obj = yyjson_mut_obj(doc);
@@ -64,6 +67,7 @@ static inline double round3(double v) {
     return round(v * 1000.0) / 1000.0;
 }
 
+/* Converts enum into a stable string for meta.pipelineRequested. */
 static const char* pipeline_requested_str(const app_analyze_opts_t *opts) {
     if (!opts) return "auto";
     switch (opts->pipeline) {
@@ -74,6 +78,9 @@ static const char* pipeline_requested_str(const app_analyze_opts_t *opts) {
     }
 }
 
+/* Computes basic text metrics for meta/domain/page reporting.
+ * Metrics are based on the token stream used for word results (filtered tokens).
+ */
 static TextMetrics compute_metrics(const char *text, TokenList tokens) {
     TextMetrics m = {0};
 
@@ -101,7 +108,7 @@ app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, 
     bool include_bigrams = (opts) ? opts->include_bigrams : true;
     bool per_page = (opts) ? opts->per_page_results : true;
 
-    // Wichtig: 0 = FULL zulassen
+    /* Top-K policy: 0 means FULL output (used by CLI/batch). */
     size_t topk = opts ? opts->top_k : 20;
 
     WordCountList *page_words = (WordCountList *)calloc(n_pages, sizeof(WordCountList));
@@ -112,19 +119,24 @@ app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, 
         return fail(11, "Out of memory");
     }
 
+    /* Measurement point for AUTO pipeline decision (total chars received). */
     size_t chars_received = 0;
     for (size_t i = 0; i < n_pages; i++) {
         const char *t = pages[i].text ? pages[i].text : "";
         chars_received += strlen(t);
     }
 
+    /* Pipeline switch:
+     * - AUTO selects ID for larger inputs
+     * - explicit opts->pipeline overrides AUTO decision
+     */
     int use_id_pipeline = (chars_received >= PIPELINE_THRESHOLD_CHARS);
     if (opts) {
         if (opts->pipeline == APP_PIPELINE_STRING) use_id_pipeline = 0;
         else if (opts->pipeline == APP_PIPELINE_ID) use_id_pipeline = 1;
     }
 
-    // --- Metrics (wordCount, wordCharCount, charCount) ---
+    /* Metrics are reported both per-page and aggregated for domainResult. */
     TextMetrics domain_metrics = (TextMetrics){0};
     TextMetrics *page_metrics = (TextMetrics *)calloc(n_pages, sizeof(TextMetrics));
     if (!page_metrics) {
@@ -135,6 +147,7 @@ app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, 
 
     double t_analyze0 = now_ms();
 
+    /* Stopword file is loaded once and reused (shared across pages). */
     StopwordList sw = {0};
     int sw_rc = stopwords_load(&sw, stop_path);
     if (sw_rc != 0) {
@@ -149,25 +162,26 @@ app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, 
 
         TokenList raw = tokenize(t);
 
-        // gefilterte Kopie für Words/TopK
+        /* Words/metrics use filtered tokens (no stopwords, short, digits-only). */
         TokenList filtered = filter_stopwords_copy(&raw, stop_path);
 
-        // Optional: Wenn du Fehler sauber unterscheiden willst, wäre es besser,
-        // filter_stopwords_copy() so zu bauen, dass es einen rc zurückgibt.
-        // Für jetzt: stopwords_load wurde oben validiert, daher ist leer = ok.
+        /* Metrics are derived from the same token stream as word results. */
         page_metrics[i] = compute_metrics(t, filtered);
 
-        // Domain metrics wie gehabt
         domain_metrics.charCount     += page_metrics[i].charCount;
         domain_metrics.wordCount     += page_metrics[i].wordCount;
         domain_metrics.wordCharCount += page_metrics[i].wordCharCount;
 
+        /* Core analysis stage: pipeline-specific implementation.
+         * - words are based on filtered tokens
+         * - bigrams (if enabled) are based on raw tokens + stopword rules (no bridging)
+         */
         if (use_id_pipeline) {
             int ok = analyze_id_pipeline(
-                &filtered,          // Words basieren auf filtered
-                &raw,               // Bigrams basieren auf raw
+                &filtered,
+                &raw,
                 include_bigrams,
-                &sw,                // Stopwords für bigrams-excluding
+                &sw,
                 &page_words[i],
                 include_bigrams ? &page_bigrams[i] : NULL
             );
@@ -190,7 +204,7 @@ app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, 
                 &sw,
                 &page_words[i],
                 include_bigrams ? &page_bigrams[i] : NULL
-            );      
+            );
             if (!ok) {
                 free_tokens(&filtered);
                 free_tokens(&raw);
@@ -204,17 +218,17 @@ app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, 
             }
         }
 
-
         free_tokens(&filtered);
         free_tokens(&raw);
     }
 
+    /* Domain aggregation stage: merge page results into domainResult. */
     WordCountList domain_words = aggregate_word_counts(page_words, n_pages);
     BigramCountList domain_bigrams = include_bigrams
         ? aggregate_bigram_counts(page_bigrams, n_pages)
         : (BigramCountList){0};
 
-    // Effective K (0 = FULL)
+    /* Apply Top-K after aggregation (0 means full lists). */
     size_t k_words = (topk == 0) ? domain_words.count : topk;
     WordCountList top_words = top_k_words(&domain_words, k_words);
 
@@ -227,7 +241,7 @@ app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, 
     double t_analyze1 = now_ms();
     double runtime_analyze_ms = round3(t_analyze1 - t_analyze0);
 
-    // build response json (Schema wie response-analyse_example.json)
+    /* Build response JSON (schema aligned with response-analyse_example.json). */
     yyjson_mut_doc *resp = yyjson_mut_doc_new(NULL);
     if (!resp) {
         for (size_t i = 0; i < n_pages; i++) free_word_counts(&page_words[i]);
@@ -258,11 +272,13 @@ app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, 
     yyjson_mut_obj_add_uint(resp, meta, "pagesReceived", (uint64_t)n_pages);
     yyjson_mut_obj_add_real(resp, meta, "runtimeMsAnalyze", runtime_analyze_ms);
 
+    /* Expose pipeline selection for perf comparisons and debugging. */
     const char *req = pipeline_requested_str(opts);
     const char *used = use_id_pipeline ? "id" : "string";
     yyjson_mut_obj_add_strcpy(resp, meta, "pipelineRequested", req);
     yyjson_mut_obj_add_strcpy(resp, meta, "pipelineUsed", used);
 
+    /* Measurement point: peak RSS of whole process at end of analysis. */
     yyjson_mut_obj_add_uint(resp, meta, "peakRssKiB", ta_peak_rss_kib());
 
     yyjson_mut_obj_add_val(resp, root, "meta", meta);
@@ -289,7 +305,7 @@ app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, 
         for (size_t i = 0; i < n_pages; i++) {
             yyjson_mut_val *p = yyjson_mut_obj(resp);
 
-            // id/name/url aus Input übernehmen (mindestens id+url wie im Beispiel)
+            /* Preserve identifiers from input for client-side correlation. */
             yyjson_mut_obj_add_sint(resp, p, "id", (int64_t)pages[i].id);
             if (pages[i].name) yyjson_mut_obj_add_strcpy(resp, p, "name", pages[i].name);
             if (pages[i].url)  yyjson_mut_obj_add_strcpy(resp, p, "url", pages[i].url);
@@ -298,7 +314,7 @@ app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, 
             yyjson_mut_obj_add_uint(resp, p, "wordCount", (uint64_t)page_metrics[i].wordCount);
             yyjson_mut_obj_add_uint(resp, p, "wordCharCount", (uint64_t)page_metrics[i].wordCharCount);
 
-            // per-page top/full
+            /* Per-page Top-K (0 means full list) for debugging and comparisons. */
             size_t k_pw = (topk == 0) ? page_words[i].count : topk;
             WordCountList pw_top = top_k_words(&page_words[i], k_pw);
             yyjson_mut_val *pw = yyjson_mut_arr(resp);
@@ -320,7 +336,7 @@ app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, 
         yyjson_mut_obj_add_val(resp, root, "pageResults", pages_arr);
     }
 
-    // cleanup
+    /* Cleanup: free intermediate lists after JSON materialization. */
     for (size_t i = 0; i < n_pages; i++) free_word_counts(&page_words[i]);
     free(page_words);
 

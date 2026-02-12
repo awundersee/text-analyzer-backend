@@ -4,7 +4,10 @@
 #include <stddef.h>
 #include "core/tokenizer.h"
 
-// [NO EXTERN] simple word->count list (linear lookup; ok for G4)
+/*
+ * String-based word frequency representation.
+ * Used in the basic (non-ID) pipeline.
+ */
 typedef struct {
     char *word;
     size_t count;
@@ -15,13 +18,17 @@ typedef struct {
     size_t count;
 } WordCountList;
 
-// Build frequency list from tokens (tokens are not modified).
+/*
+ * Count word frequencies from tokens.
+ * Tokens remain unchanged.
+ * Implementation uses linear lookup (sufficient for small datasets).
+ */
 WordCountList count_words(const TokenList *tokens);
 
-// Free frequency list.
+/* Release memory owned by WordCountList. */
 void free_word_counts(WordCountList *list);
 
-// Helper: get count for a word (0 if not found).
+/* Retrieve count for a word (returns 0 if not present). */
 size_t get_word_count(const WordCountList *list, const char *word);
 
 #endif

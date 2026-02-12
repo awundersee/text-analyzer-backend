@@ -3,35 +3,51 @@
 
 #include <stddef.h>
 
+/*
+ * Token container produced by the tokenizer stage.
+ * Represents the first transformation step in the analysis pipeline.
+ */
 typedef struct {
-    char **items;     // array of C strings
+    char **items;     // dynamically allocated token array
     size_t count;     // number of tokens
 } TokenList;
 
-// NEU: reine Textumfangs-Kennzahlen (inkl. Stoppwörtern!)
+/*
+ * Raw text metrics collected during tokenization.
+ *
+ * Includes stopwords (no filtering at this stage).
+ * Used for meta information and performance instrumentation.
+ */
 typedef struct {
-    size_t wordCount;      // Anzahl Tokens (Wörter) inkl. Stoppwörter
-    size_t wordCharCount;  // Summe der Token-Längen (ohne Leerzeichen/Trenner)
+    size_t wordCount;      // total tokens (including stopwords)
+    size_t wordCharCount;  // sum of token lengths (no separators)
 
-    // neu für Performanceanalyse
-    size_t bytesScanned;
-    size_t splitAsciiCount;
-    size_t splitUtf8DashCount;
-    size_t tokenAllocs;
-    size_t tokenBytesAllocated;    
+    /* Performance instrumentation (Phase 3 evaluation). */
+    size_t bytesScanned;          // total input bytes processed
+    size_t splitAsciiCount;       // ASCII-based splits
+    size_t splitUtf8DashCount;    // UTF-8 dash splits
+    size_t tokenAllocs;           // number of token allocations
+    size_t tokenBytesAllocated;   // total allocated token bytes
 } TokenStats;
 
-// [NO EXTERN] Tokenize ASCII-ish text into lowercase words.
-// Rules (initial, for G1/G2 later):
-// - split on whitespace
-// - ignore empty tokens
-// - lowercase A-Z
+/*
+ * Basic tokenizer (string-based pipeline entry).
+ * - splits on whitespace
+ * - ignores empty tokens
+ * - normalizes ASCII A-Z to lowercase
+ */
 TokenList tokenize(const char *text);
 
-// NEU: Tokenize + Stats (für meta/pageResults.wordCount/wordCharCount)
+/*
+ * Tokenizer with instrumentation.
+ * Used to populate meta.wordCount / meta.wordCharCount and
+ * to collect performance data.
+ */
 TokenList tokenize_with_stats(const char *text, TokenStats *stats);
 
-// Free memory allocated by tokenize()
+/*
+ * Releases memory owned by a TokenList.
+ */
 void free_tokens(TokenList *list);
 
 #endif

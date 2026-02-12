@@ -1,4 +1,3 @@
-// src/cli/main.c
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,10 +7,10 @@
 
 #include "yyjson.h"
 
-// TODO: This header should expose the SAME analysis function used by /analyze.
-// Create it by extracting the core "analyze request -> response json" logic
-// from src/api/main.c into a shared module, e.g. src/app/analyze.c/.h.
-#include "app/analyze.h"   // <- you will create this (see notes below)
+/* CLI entry uses the same core analysis module as the HTTP /analyze endpoint.
+ * This keeps output JSON, meta fields, and pipeline selection consistent.
+ */
+#include "app/analyze.h"
 #include "cli/batch.h"
 #include "input/request_validate.h"
 
@@ -24,6 +23,9 @@ static void die(const char *msg) {
     exit(1);
 }
 
+/* Reads full JSON input into memory (CLI only).
+ * IMPORTANT: buffer must remain alive while validated_request_t holds pointers into it.
+ */
 static char *read_file_all(const char *path, size_t *out_len) {
     FILE *f = fopen(path, "rb");
     if (!f) return NULL;
@@ -45,6 +47,7 @@ static char *read_file_all(const char *path, size_t *out_len) {
     return buf;
 }
 
+/* Wall-clock measurement point for CLI benchmarks. */
 static double now_ms(void) {
 #if defined(CLOCK_MONOTONIC)
     struct timespec ts;
@@ -75,7 +78,7 @@ typedef struct {
 
 int main(int argc, char **argv) {
 
-    // Subcommand: batch
+    /* Subcommand used for bulk perf/regression runs. */
     if (argc >= 2 && strcmp(argv[1], "batch") == 0) {
         const char *in_dir  = "data/batch_in";
         const char *out_dir = "data/batch_out";
@@ -109,7 +112,7 @@ int main(int argc, char **argv) {
     const char *out_path = NULL;
     app_pipeline_t pipeline = APP_PIPELINE_AUTO;
 
-    size_t top_k_cli = 0;  // default: FULL (kein TopK)
+    size_t top_k_cli = 0;  // 0 => full output (no Top-K truncation)
 
     for (int i = 2; i < argc; i++) {
         if (strcmp(argv[i], "--out") == 0 && i + 1 < argc) {
@@ -133,7 +136,7 @@ int main(int argc, char **argv) {
                     argv[0]);
                 return 2;
             }
-            top_k_cli = (size_t)v;  // 0 erlaubt (FULL)
+            top_k_cli = (size_t)v;  // 0 allowed (full)
         } else {
             fprintf(stderr, "Unknown arg: %s\n", argv[i]);
             fprintf(stderr,
@@ -144,20 +147,19 @@ int main(int argc, char **argv) {
         }
     }
 
-
-    // --- run analysis (total) ---
+    /* Measurement point: end-to-end CLI runtime including parse/validate. */
     double t0 = now_ms();
 
     size_t json_len = 0;
     char *json = read_file_all(in_path, &json_len);
     if (!json) die("Could not read input file");
 
-    // --- shared parse + validate (CLI relaxed profile) ---
+    /* Shared boundary validation with CLI-specific relaxed limits. */
     req_validate_cfg_t vcfg = {
-        .max_pages = 0,                 // unlimited
-        .max_bytes = 0,                 // unlimited
-        .allow_root_array = true,       // allow root = pages[]
-        .allow_options_pipeline = false,// keep CLI behavior: pipeline only via --pipeline
+        .max_pages = 0,                  // unlimited
+        .max_bytes = 0,                  // unlimited
+        .allow_root_array = true,        // allow root = pages[]
+        .allow_options_pipeline = false, // CLI selects pipeline via --pipeline only
         .default_include_bigrams = true,
         .default_per_page_results = true
     };
@@ -165,14 +167,14 @@ int main(int argc, char **argv) {
     validated_request_t req;
     req_error_t verr = {0};
 
-    // IMPORTANT: keep `json` buffer alive until validated_request_free(&req)
+    /* IMPORTANT: keep `json` buffer alive until validated_request_free(&req). */
     if (!request_parse_and_validate(json, json_len, &vcfg, &req, &verr)) {
         fprintf(stderr, "Invalid input: %s\n", verr.message ? verr.message : "invalid request");
         free(json);
         return 3;
     }
 
-    // Stopwords file
+    /* Stopwords path is injected via env for perf runs and portability. */
     const char *sw = getenv("STOPWORDS_FILE");
     if (!sw) sw = "data/stopwords_de.txt";
 
@@ -180,11 +182,12 @@ int main(int argc, char **argv) {
         .include_bigrams   = req.include_bigrams,
         .per_page_results  = req.per_page_results,
         .stopwords_path    = sw,
-        .top_k             = top_k_cli,   // default: 0
+        .top_k             = top_k_cli,
         .domain            = req.domain,  // optional
-        .pipeline          = pipeline
+        .pipeline          = pipeline     // pipeline override (auto|string|id)
     };
 
+    /* Analysis stage (core pipeline switch happens inside app_analyze_pages). */
     app_analyze_result_t res = app_analyze_pages(req.pages, req.page_count, &opts);
 
     double t1 = now_ms();
@@ -199,26 +202,25 @@ int main(int argc, char **argv) {
         return 4;
     }
 
-    // Read runtimeMsAnalyze from meta
+    /* Pull meta.runtimeMsAnalyze (inner pipeline time) from response. */
     double analyze_ms = -1.0;
 
     if (res.response_doc) {
         yyjson_mut_val *root = yyjson_mut_doc_get_root(res.response_doc);
         yyjson_mut_val *meta = root ? yyjson_mut_obj_get(root, "meta") : NULL;
 
-        // ensure meta exists
+        /* Ensure meta exists for CLI-added metrics. */
         if (!meta || !yyjson_mut_is_obj(meta)) {
             meta = yyjson_mut_obj(res.response_doc);
             yyjson_mut_obj_add_val(res.response_doc, root, "meta", meta);
         }
 
-        // read analyze runtime
         yyjson_mut_val *ja = yyjson_mut_obj_get(meta, "runtimeMsAnalyze");
         if (ja && yyjson_mut_is_num(ja)) {
             analyze_ms = yyjson_mut_get_real(ja);
         }
 
-        // write total runtime
+        /* CLI adds end-to-end runtime (parse+validate+analyze+serialize). */
         yyjson_mut_obj_add_real(res.response_doc, meta, "runtimeMsTotal", runtime_total_ms);
     }
 
@@ -230,11 +232,11 @@ int main(int argc, char **argv) {
         return 4;
     }
 
-    // CLI stdout (used by perf tests)
+    /* Stdout key=value lines for perf/stress harnesses (CSV-friendly). */
     fprintf(stdout, "runtime_ms_total=%.3f\n", runtime_total_ms);
     fprintf(stdout, "runtime_ms_analyze=%.3f\n", analyze_ms);
 
-    // Print peakRss
+    /* Peak RSS is provided by core analysis (metrics hook). */
     unsigned long long peak_kib = 0ULL;
     if (res.response_doc) {
         yyjson_mut_val *root = yyjson_mut_doc_get_root(res.response_doc);
@@ -250,7 +252,7 @@ int main(int argc, char **argv) {
     }
     fprintf(stdout, "peak_rss_kib=%llu\n", peak_kib);
 
-    // Also print domain/page stats for stress CSV (key=value mode)
+    /* Additional run metadata for stress reporting. */
     long long pages_received = 0;
     const char *pipeline_used = NULL;
     long long word_count = -1, char_count = -1, word_char_count = -1;
@@ -258,7 +260,6 @@ int main(int argc, char **argv) {
     if (res.response_doc) {
         yyjson_mut_val *root = yyjson_mut_doc_get_root(res.response_doc);
 
-        // meta
         yyjson_mut_val *meta = root ? yyjson_mut_obj_get(root, "meta") : NULL;
         if (meta && yyjson_mut_is_obj(meta)) {
             yyjson_mut_val *pr = yyjson_mut_obj_get(meta, "pagesReceived");
@@ -268,7 +269,6 @@ int main(int argc, char **argv) {
             if (pu && yyjson_mut_is_str(pu)) pipeline_used = yyjson_mut_get_str(pu);
         }
 
-        // domainResult
         yyjson_mut_val *dr = root ? yyjson_mut_obj_get(root, "domainResult") : NULL;
         if (dr && yyjson_mut_is_obj(dr)) {
             yyjson_mut_val *wc = yyjson_mut_obj_get(dr, "wordCount");
@@ -288,7 +288,7 @@ int main(int argc, char **argv) {
     fprintf(stdout, "char_count=%lld\n", char_count);
     fprintf(stdout, "word_char_count=%lld\n", word_char_count);
 
-    // Optional: write response JSON
+    /* Optional: pretty JSON output for debugging (stdout always, file optionally). */
     if (out_path && res.response_doc) {
         yyjson_write_err werr;
         size_t out_len = 0;
@@ -297,11 +297,9 @@ int main(int argc, char **argv) {
         if (!out) {
             fprintf(stderr, "JSON write error: %s\n", werr.msg);
         } else {
-            // immer auf stdout ausgeben
             fwrite(out, 1, out_len, stdout);
             fputc('\n', stdout);
 
-            // optional: zusätzlich in Datei schreiben
             if (out_path) {
                 FILE *fo = fopen(out_path, "wb");
                 if (fo) {
@@ -313,7 +311,7 @@ int main(int argc, char **argv) {
         }
     }
 
-    // cleanup (order matters: req.doc may reference `json`)
+    /* Cleanup order matters: validated_request_t may reference json/doc strings. */
     if (res.response_doc) yyjson_mut_doc_free(res.response_doc);
     validated_request_free(&req);
     free(json);

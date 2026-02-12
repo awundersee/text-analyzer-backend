@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Aggregation output owns its own copies of word strings. */
 static char *dup_cstr(const char *s) {
     if (!s) return NULL;
     size_t n = strlen(s);
@@ -19,6 +20,9 @@ WordCountList aggregate_word_counts(
     WordCountList out = (WordCountList){0};
     if (!lists || list_count == 0) return out;
 
+    /* Domain-level aggregation stage (G5):
+     * merges per-page word frequencies into a single result.
+     */
     size_t cap = 16;
     out.items = (WordCount *)calloc(cap, sizeof(WordCount));
     if (!out.items) return (WordCountList){0};
@@ -29,7 +33,7 @@ WordCountList aggregate_word_counts(
             const char *word = src->items[j].word;
             size_t cnt = src->items[j].count;
 
-            // linear lookup (G5)
+            /* Linear merge lookup (acceptable for small top-N lists). */
             size_t found = (size_t)-1;
             for (size_t k = 0; k < out.count; k++) {
                 if (strcmp(out.items[k].word, word) == 0) {
@@ -43,6 +47,7 @@ WordCountList aggregate_word_counts(
                 continue;
             }
 
+            /* Append new aggregated word entry (dynamic growth). */
             if (out.count == cap) {
                 cap *= 2;
                 WordCount *tmp =
@@ -65,6 +70,7 @@ WordCountList aggregate_word_counts(
     return out;
 }
 
+/* Free helper for aggregated (domain-level) word list. */
 void free_aggregated_word_counts(WordCountList *list) {
     if (!list || !list->items) return;
     for (size_t i = 0; i < list->count; i++) {

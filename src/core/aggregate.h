@@ -4,14 +4,16 @@
 #include <stddef.h>
 #include "core/freq.h"
 
-// [NO EXTERN]
-// Aggregates multiple WordCountLists into a single WordCountList.
+/*
+ * Domain-level aggregation for word frequencies.
+ * Merges per-page WordCountLists into a single combined list.
+ */
 WordCountList aggregate_word_counts(
     const WordCountList *lists,
     size_t list_count
 );
 
-// Free helper (optional, but symmetry is nice)
+/* Release memory of an aggregated WordCountList. */
 void free_aggregated_word_counts(WordCountList *list);
 
 #endif

@@ -17,19 +17,23 @@ int analyze_id_pipeline(
   *out_words = (WordCountList){0};
   if (out_bigrams) *out_bigrams = (BigramCountList){0};
 
-  // Dict wird geteilt: Words (filtered) + Bigram-Export (raw)
+  /* ID-based pipeline:
+   * single shared Dict ensures consistent IDs across words and bigrams.
+   */
   Dict dict;
   size_t hint = filtered->count + (raw ? raw->count : 0);
   if (!dict_init(&dict, hint * 2 + 16)) return 0;
 
-  // Words aus filtered
+  /* Words are counted from filtered tokens (stopwords/short/digits removed). */
   if (!id_count_words(filtered, &dict, out_words)) {
     dict_free(&dict);
     free_word_counts(out_words);
     return 0;
   }
 
-  // Bigrams aus raw + sw (kein Bridging) – Logik steckt in id_bigrams.c
+  /* Bigrams are counted from raw tokens with stopword rules.
+   * No bridging: ignored tokens reset adjacency (see id_bigrams.c).
+   */
   if (include_bigrams && out_bigrams) {
     if (!raw || !sw) {
       dict_free(&dict);

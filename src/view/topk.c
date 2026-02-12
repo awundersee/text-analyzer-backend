@@ -6,12 +6,14 @@
 #include <inttypes.h>
 #include <stdio.h>
 
+/* Perf probe for Top-K steps (enabled via PERF_TOPK env var). */
 static inline uint64_t now_ns(void) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint64_t)ts.tv_sec * 1000000000ull + ts.tv_nsec;
 }
 
+/* Deep-copy helper; returned lists own their strings. */
 static char *dup_cstr(const char *s) {
     if (!s) return NULL;
     size_t n = strlen(s);
@@ -23,6 +25,10 @@ static char *dup_cstr(const char *s) {
 
 /* ---------- Word sorting ---------- */
 
+/* Deterministic ordering:
+ * - primary: count DESC
+ * - tie: word ASC
+ */
 static int cmp_wordcount_desc_then_word_asc(const void *a, const void *b) {
     const WordCount *wa = (const WordCount *)a;
     const WordCount *wb = (const WordCount *)b;
@@ -30,7 +36,6 @@ static int cmp_wordcount_desc_then_word_asc(const void *a, const void *b) {
     if (wa->count < wb->count) return 1;   // desc
     if (wa->count > wb->count) return -1;
 
-    // tie-break: word asc
     if (!wa->word && !wb->word) return 0;
     if (!wa->word) return 1;
     if (!wb->word) return -1;
@@ -41,12 +46,15 @@ WordCountList top_k_words(const WordCountList *list, size_t k) {
     WordCountList out = (WordCountList){0};
     if (!list || !list->items || list->count == 0 || k == 0) return out;
 
+    /* Optional perf instrumentation:
+     * copy -> sort -> move-to-output (ownership transfer).
+     */
     const char *perf = getenv("PERF_TOPK");
     uint64_t t0=0, t_copy=0, t_sort=0, t_out=0;
 
     if (perf) t0 = now_ns();
 
-    // copy all
+    /* Copy all items so we can sort without mutating the input list. */
     WordCount *tmp = (WordCount *)calloc(list->count, sizeof(WordCount));
     if (!tmp) return out;
 
@@ -54,7 +62,6 @@ WordCountList top_k_words(const WordCountList *list, size_t k) {
         tmp[i].word = dup_cstr(list->items[i].word);
         tmp[i].count = list->items[i].count;
         if (list->items[i].word && !tmp[i].word) {
-            // cleanup
             for (size_t j = 0; j < i; j++) free(tmp[j].word);
             free(tmp);
             return (WordCountList){0};
@@ -69,6 +76,7 @@ WordCountList top_k_words(const WordCountList *list, size_t k) {
 
     size_t n = list->count < k ? list->count : k;
 
+    /* Output list takes ownership of the top-n copied strings. */
     out.items = (WordCount *)calloc(n, sizeof(WordCount));
     if (!out.items) {
         for (size_t i = 0; i < list->count; i++) free(tmp[i].word);
@@ -83,7 +91,6 @@ WordCountList top_k_words(const WordCountList *list, size_t k) {
         tmp[i].word = NULL;
     }
 
-    // cleanup remaining temp
     for (size_t i = 0; i < list->count; i++) free(tmp[i].word);
     free(tmp);
 
@@ -103,12 +110,17 @@ WordCountList top_k_words(const WordCountList *list, size_t k) {
     return out;
 }
 
+/* Top-K outputs share the same free routine as regular WordCountList. */
 void free_top_k_words(WordCountList *list) {
     free_word_counts(list);
 }
 
 /* ---------- Bigram sorting ---------- */
 
+/* Deterministic ordering:
+ * - primary: count DESC
+ * - tie: w1 ASC, then w2 ASC
+ */
 static int cmp_bigram_desc_then_lex(const void *a, const void *b) {
     const BigramCount *ba = (const BigramCount *)a;
     const BigramCount *bb = (const BigramCount *)b;
@@ -116,7 +128,6 @@ static int cmp_bigram_desc_then_lex(const void *a, const void *b) {
     if (ba->count < bb->count) return 1;   // desc
     if (ba->count > bb->count) return -1;
 
-    // tie-break: w1 asc, then w2 asc
     const char *a1 = ba->w1 ? ba->w1 : "";
     const char *b1 = bb->w1 ? bb->w1 : "";
     int c1 = strcmp(a1, b1);
@@ -136,6 +147,7 @@ BigramCountList top_k_bigrams(const BigramCountList *list, size_t k) {
 
     if (perf) t0 = now_ns();
 
+    /* Copy all items so we can sort without mutating the input list. */
     BigramCount *tmp = (BigramCount *)calloc(list->count, sizeof(BigramCount));
     if (!tmp) return out;
 
@@ -162,6 +174,7 @@ BigramCountList top_k_bigrams(const BigramCountList *list, size_t k) {
 
     size_t n = list->count < k ? list->count : k;
 
+    /* Output list takes ownership of the top-n copied strings. */
     out.items = (BigramCount *)calloc(n, sizeof(BigramCount));
     if (!out.items) {
         for (size_t i = 0; i < list->count; i++) {
@@ -201,6 +214,7 @@ BigramCountList top_k_bigrams(const BigramCountList *list, size_t k) {
     return out;
 }
 
+/* Top-K outputs share the same free routine as regular BigramCountList. */
 void free_top_k_bigrams(BigramCountList *list) {
     free_bigram_counts(list);
 }

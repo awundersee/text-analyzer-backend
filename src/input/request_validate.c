@@ -1,4 +1,3 @@
-// src/input/request_validate.c
 #include "input/request_validate.h"
 
 #include <stdlib.h>
@@ -24,6 +23,7 @@ bool request_parse_and_validate(char *json,
                                  const req_validate_cfg_t *cfg,
                                  validated_request_t *out,
                                  req_error_t *err) {
+    /* Request boundary: reject missing body and enforce size limits early. */
     if (!json || json_len == 0 || !cfg || !out) {
         set_err(err, 400, "missing request body");
         return false;
@@ -31,6 +31,7 @@ bool request_parse_and_validate(char *json,
 
     memset(out, 0, sizeof(*out));
 
+    /* Protect backend resources (API/CLI policies differ via cfg). */
     if (cfg->max_bytes > 0 && json_len > cfg->max_bytes) {
         set_err(err, 413, "payload too large");
         return false;
@@ -46,7 +47,7 @@ bool request_parse_and_validate(char *json,
     yyjson_val *root = yyjson_doc_get_root(doc);
     yyjson_val *pages = NULL;
 
-    // defaults
+    /* Option defaults (applied before parsing user-provided options). */
     out->include_bigrams  = cfg->default_include_bigrams;
     out->per_page_results = cfg->default_per_page_results;
     out->domain = NULL;
@@ -54,15 +55,15 @@ bool request_parse_and_validate(char *json,
     out->pipeline_from_options = APP_PIPELINE_AUTO;
 
     if (yyjson_is_obj(root)) {
-        // domain (optional)
+        /* Object shape: { domain?, options?, pages: [...] } */
         yyjson_val *d = yyjson_obj_get(root, "domain");
         if (d && yyjson_is_str(d)) out->domain = yyjson_get_str(d);
 
-        // options
         yyjson_val *opt = yyjson_obj_get(root, "options");
         out->include_bigrams  = json_get_bool(opt, "includeBigrams", out->include_bigrams);
         out->per_page_results = json_get_bool(opt, "perPageResults", out->per_page_results);
 
+        /* Optional pipeline override (controls pipeline switch point). */
         if (cfg->allow_options_pipeline && opt && yyjson_is_obj(opt)) {
             yyjson_val *p = yyjson_obj_get(opt, "pipeline");
             if (p && yyjson_is_str(p)) {
@@ -85,6 +86,7 @@ bool request_parse_and_validate(char *json,
             return false;
         }
     } else if (yyjson_is_arr(root)) {
+        /* Array shape: [ ...pages... ] (CLI-only if enabled). */
         if (!cfg->allow_root_array) {
             yyjson_doc_free(doc);
             set_err(err, 400, "root must be an object");
@@ -104,6 +106,7 @@ bool request_parse_and_validate(char *json,
         return false;
     }
 
+    /* Page-count guard: prevents excessive per-page allocations/processing. */
     if (cfg->max_pages > 0 && n_pages > cfg->max_pages) {
         yyjson_doc_free(doc);
         set_err(err, 413, "too many pages");
@@ -143,7 +146,7 @@ bool request_parse_and_validate(char *json,
         yyjson_val *jname = yyjson_obj_get(page, "name");
         yyjson_val *jurl  = yyjson_obj_get(page, "url");
 
-        /* NEW: per-page limit */
+        /* Per-page text guard (prevents single-page spikes). */
         if (cfg->max_page_chars > 0 && len > cfg->max_page_chars) {
             free(pp);
             yyjson_doc_free(doc);
@@ -151,7 +154,7 @@ bool request_parse_and_validate(char *json,
             return false;
         }
 
-        /* NEW: total chars limit */
+        /* Total text guard: measurement input for pipeline auto-switch logic. */
         if (cfg->max_total_chars > 0) {
             if (len > SIZE_MAX - out->chars_total) {
                 free(pp);
@@ -182,6 +185,7 @@ bool request_parse_and_validate(char *json,
 }
 
 void validated_request_free(validated_request_t *r) {
+    /* Ownership boundary: pages + yyjson_doc are owned by validated_request_t. */
     if (!r) return;
     if (r->pages) free(r->pages);
     if (r->doc) yyjson_doc_free(r->doc);

@@ -4,6 +4,7 @@
 #include <string.h>
 #include <ctype.h>
 
+/* Local helper: output owns its own copies of token strings. */
 static char *dup_cstr(const char *s) {
     if (!s) return NULL;
     size_t n = strlen(s);
@@ -13,6 +14,7 @@ static char *dup_cstr(const char *s) {
     return out;
 }
 
+/* Compares a stored bigram entry against (w1,w2). */
 static int bigram_equals(const BigramCount *b, const char *w1, const char *w2) {
     return b && b->w1 && b->w2 && w1 && w2 &&
            strcmp(b->w1, w1) == 0 && strcmp(b->w2, w2) == 0;
@@ -26,16 +28,19 @@ static int is_all_digits(const char *s) {
     return 1;
 }
 
+/* Shared token validity rules for bigram counting.
+ * Matches the filtering stage (minlen, digits-only, stopwords).
+ */
 static int token_should_be_ignored(const char *tok, const StopwordList *sw) {
     if (!tok || tok[0] == '\0') return 1;
 
-    // wie bisher: min length 2
+    /* Min length guard to avoid noisy tokens ("e", ...). */
     if (strlen(tok) < 2) return 1;
 
-    // wie bisher: digits-only raus
+    /* Drop numbers-only tokens ("2025", "6", ...). */
     if (is_all_digits(tok)) return 1;
 
-    // neu: stopwords raus
+    /* Stopword filtering is optional depending on pipeline stage. */
     if (sw && stopwords_contains(sw, tok)) return 1;
 
     return 0;
@@ -45,6 +50,7 @@ BigramCountList count_bigrams(const TokenList *tokens) {
     BigramCountList out = (BigramCountList){0};
     if (!tokens || !tokens->items || tokens->count < 2) return out;
 
+    /* Baseline bigram stage (string pipeline): adjacency over raw tokens. */
     size_t cap = 16;
     out.items = (BigramCount *)calloc(cap, sizeof(BigramCount));
     if (!out.items) return (BigramCountList){0};
@@ -54,14 +60,11 @@ BigramCountList count_bigrams(const TokenList *tokens) {
         const char *w2 = tokens->items[i + 1];
         if (!w1 || !w2 || w1[0] == '\0' || w2[0] == '\0') continue;
 
-        // ✅ Extra Filter: zu kurze Tokens raus (z.B. "e")
+        /* Keep token-quality consistent with later stages. */
         if (strlen(w1) < 2 || strlen(w2) < 2) continue;
-
-        // ✅ Extra Filter: Zahlen-only Tokens raus (z.B. "6", "1", "2025")
         if (is_all_digits(w1) || is_all_digits(w2)) continue;
 
-
-        // linear search (good enough for now)
+        /* Linear lookup → OK for small datasets; ID pipeline replaces this. */
         size_t found = (size_t)-1;
         for (size_t j = 0; j < out.count; j++) {
             if (bigram_equals(&out.items[j], w1, w2)) {
@@ -75,7 +78,7 @@ BigramCountList count_bigrams(const TokenList *tokens) {
             continue;
         }
 
-        // new bigram
+        /* Append new bigram entry (dynamic growth). */
         if (out.count == cap) {
             cap *= 2;
             BigramCount *tmp = (BigramCount *)realloc(out.items, cap * sizeof(BigramCount));
@@ -105,6 +108,9 @@ BigramCountList count_bigrams_excluding_stopwords(const TokenList *tokens,
     BigramCountList out = (BigramCountList){0};
     if (!tokens || !tokens->items || tokens->count < 2) return out;
 
+    /* Stopword-aware bigrams: maintains original adjacency.
+     * No bridging: pairs containing dropped tokens are skipped.
+     */
     size_t cap = 16;
     out.items = (BigramCount *)calloc(cap, sizeof(BigramCount));
     if (!out.items) return (BigramCountList){0};
@@ -113,12 +119,11 @@ BigramCountList count_bigrams_excluding_stopwords(const TokenList *tokens,
         const char *w1 = tokens->items[i];
         const char *w2 = tokens->items[i + 1];
 
-        // ✅ Original-Adjazenz bleibt; Paare mit "bad" Tokens ignorieren
         if (token_should_be_ignored(w1, sw) || token_should_be_ignored(w2, sw)) {
             continue;
         }
 
-        // linear search (good enough for now)
+        /* Linear lookup → OK for small datasets; ID pipeline replaces this. */
         size_t found = (size_t)-1;
         for (size_t j = 0; j < out.count; j++) {
             if (bigram_equals(&out.items[j], w1, w2)) {
@@ -132,7 +137,6 @@ BigramCountList count_bigrams_excluding_stopwords(const TokenList *tokens,
             continue;
         }
 
-        // new bigram
         if (out.count == cap) {
             cap *= 2;
             BigramCount *tmp = (BigramCount *)realloc(out.items, cap * sizeof(BigramCount));
@@ -158,6 +162,7 @@ BigramCountList count_bigrams_excluding_stopwords(const TokenList *tokens,
     return out;
 }
 
+/* Lookup helper (linear scan). */
 size_t get_bigram_count(const BigramCountList *list, const char *w1, const char *w2) {
     if (!list || !list->items || !w1 || !w2) return 0;
     for (size_t i = 0; i < list->count; i++) {
@@ -166,6 +171,7 @@ size_t get_bigram_count(const BigramCountList *list, const char *w1, const char 
     return 0;
 }
 
+/* Release all allocated bigram entries. */
 void free_bigram_counts(BigramCountList *list) {
     if (!list || !list->items) return;
 
