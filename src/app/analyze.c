@@ -14,7 +14,7 @@
 #include "core/aggregate.h"
 #include "core/bigram_aggregate.h"
 #include "view/topk.h"
-#include "core/metrics.h"
+#include "metrics/metrics.h"
 
 #include "yyjson.h"
 
