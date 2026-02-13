@@ -154,12 +154,6 @@ add_custom_target(test_perf_mem
   COMMENT "Running pipeline performance tests"
 )
 
-add_custom_target(test_perf_api_baseline_delta
-  COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/performance/scripts/run_perf_api_baseline_and_delta.sh
-  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-  COMMENT "Running API baseline+delta memory tests"
-)
-
 add_custom_target(test_perf_api_concurrency
   COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/performance/scripts/run_perf_api_concurrency.sh
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
