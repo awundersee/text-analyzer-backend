@@ -74,7 +74,10 @@ mkdir -p "$OUT_DIR"
 echo "pipeline,file,metric,median_ms,min_ms,max_ms,runs,comment" > "$OUT_FILE_CLI"
 echo "pipeline,file,metric,median_ms,min_ms,max_ms,runs,comment" > "$OUT_FILE_API"
 
-FILES=$(find "$DATA_DIR" -type f -name "*.json" | sort || true)
+FILES=$(find "$DATA_DIR" \
+  -type d -name "topk" -prune -o \
+  -type f -name "*.json" -print \
+  | sort || true)
 if [ -z "${FILES}" ]; then
   echo "No input files found under: $DATA_DIR"
   exit 2
@@ -144,20 +147,6 @@ import sys
 a = float(sys.argv[1])
 t = float(sys.argv[2])
 sys.exit(0 if (a >= 0.0 and t > 0.0 and t >= a) else 1)
-PY
-}
-
-# Patch request JSON to enforce a specific pipeline (writes JSON to stdout)
-json_with_pipeline() {
-  "$PY" - "$1" "$2" <<'PY'
-import json, sys
-path = sys.argv[1]
-pip  = sys.argv[2]
-with open(path, "r", encoding="utf-8") as f:
-    obj = json.load(f)
-obj.setdefault("options", {})
-obj["options"]["pipeline"] = pip
-print(json.dumps(obj, ensure_ascii=False))
 PY
 }
 
@@ -272,13 +261,12 @@ while IFS= read -r f; do
   for pip in $PIPELINES; do
     echo "==> API [$pip] $f" >&2
 
-    # build patched request file
-    tmp_req="$(mktemp)"
-    json_with_pipeline "$f" "$pip" > "$tmp_req"
-
     # Warmup runs (ignored)
     for _ in $(seq 1 "$WARMUP"); do
-      curl -sS --max-time "$API_TIMEOUT_SEC" -H "Content-Type: application/json" --data-binary @"$tmp_req" "$API_URL" >/dev/null || true
+      curl -sS --max-time "$API_TIMEOUT_SEC" \
+        -H "Content-Type: application/json" \
+        -H "X-Pipeline: $pip" \
+        --data-binary @"$f" "$API_URL" >/dev/null || true
     done
 
     times_analyze="$(mktemp)"
@@ -291,7 +279,10 @@ while IFS= read -r f; do
       tmp_err="$(mktemp)"
 
       http_code="$(curl --http1.1 --max-time "$API_TIMEOUT_SEC" -sS -D "$tmp_hdr" -o "$tmp_resp" -w "%{http_code}" \
-        -H "Content-Type: application/json" --data-binary @"$tmp_req" "$API_URL" 2>"$tmp_err")"
+        -H "Content-Type: application/json" \
+        -H "X-Pipeline: $pip" \
+        --data-binary @"$f" "$API_URL" 2>"$tmp_err")"
+
       curl_rc=$?
 
       if [ $curl_rc -ne 0 ]; then
@@ -341,8 +332,6 @@ while IFS= read -r f; do
       echo "$total_ms" >> "$times_total"
     done
 
-    rm -f "$tmp_req"
-
     if [ -s "$times_analyze" ] && [ -s "$times_total" ] && [ -z "$comment" ]; then
       sort -n "$times_analyze" -o "$times_analyze"
       min_a="$(head -n 1 "$times_analyze")"
@@ -368,235 +357,3 @@ while IFS= read -r f; do
 done <<< "$FILES"
 
 echo "==> Wrote $OUT_FILE_API"
-
-# ============================================================
-# WIDE CSV SUMMARY (one row per test case)
-# - Runtimes: medians from CLI + API, both pipelines
-# - Counts: from API response domainResult
-# ============================================================
-
-# ---------- DE format helpers ----------
-fmt_ms_de() { awk -v x="$1" 'BEGIN{ if (x=="NA" || x=="") print "NA"; else printf "%.3f", x }' | sed 's/\./,/g'; }
-
-fmt_int_de() {
-  "$PY" - "$1" <<'PY'
-import sys
-n = sys.argv[1]
-if n in ("", "NA"):
-    print("NA")
-else:
-    try:
-        v = int(float(n))
-        print(f"{v:,}".replace(",", "."))
-    except:
-        print("NA")
-PY
-}
-
-# ---------- Page count from request JSON ----------
-json_get_pages_count() {
-  "$PY" - "$1" <<'PY'
-import json, sys
-p = sys.argv[1]
-try:
-    with open(p, "rb") as f:
-        o = json.load(f)
-    if isinstance(o, list):
-        print(len(o))
-    elif isinstance(o, dict) and isinstance(o.get("pages"), list):
-        print(len(o["pages"]))
-    else:
-        print(1)
-except Exception:
-    print(1)
-PY
-}
-
-# Counts from API response
-json_get_counts_domain() {
-  "$PY" - "$1" <<'PY'
-import json, sys
-p = sys.argv[1]
-try:
-    with open(p, "rb") as f:
-        o = json.load(f)
-    dr = o.get("domainResult", {}) or {}
-    wc  = dr.get("wordCount", "")
-    wcc = dr.get("wordCharCount", "")
-    cc  = dr.get("charCount", "")
-    if wc=="" or wcc=="" or cc=="":
-        print("")
-    else:
-        print(f"{wc}\t{wcc}\t{cc}")
-except Exception:
-    print("")
-PY
-}
-
-# ---------- CLI medians ----------
-run_cli_medians() {
-  local f="$1"
-  local pip="$2"
-
-  for _ in $(seq 1 "$WARMUP"); do
-    run_with_timeout "$CLI_TIMEOUT_SEC" "$BIN" "$f" --pipeline "$pip" >/dev/null || true
-  done
-
-  local times_analyze; times_analyze="$(mktemp)"
-  local times_total;   times_total="$(mktemp)"
-  local comment=""
-
-  for _ in $(seq 1 "$RUNS"); do
-    out="$(run_with_timeout "$CLI_TIMEOUT_SEC" "$BIN" "$f" --pipeline "$pip" 2>&1)" || true
-    rc=$?
-
-    if [ $rc -ne 0 ]; then
-      comment="cli_error"
-      break
-    fi
-
-    total_ms="$(printf "%s\n" "$out" | awk -F= '/^runtime_ms_total=/{print $2; exit}')"
-    analyze_ms="$(printf "%s\n" "$out" | awk -F= '/^runtime_ms_analyze=/{print $2; exit}')"
-
-    if [ -z "$total_ms" ] || [ -z "$analyze_ms" ]; then
-      comment="cli_parse_error"
-      break
-    fi
-
-    if ! validate_runtimes "$analyze_ms" "$total_ms" >/dev/null 2>&1; then
-      comment="cli_invalid"
-      break
-    fi
-
-    echo "$analyze_ms" >> "$times_analyze"
-    echo "$total_ms"   >> "$times_total"
-  done
-
-  if [ -s "$times_analyze" ] && [ -s "$times_total" ] && [ -z "$comment" ]; then
-    sort -n "$times_analyze" -o "$times_analyze"
-    sort -n "$times_total"   -o "$times_total"
-    med_a="$(cat "$times_analyze" | median_of_sorted)"
-    med_t="$(cat "$times_total"   | median_of_sorted)"
-    rm -f "$times_analyze" "$times_total"
-    echo "$med_a $med_t"
-  else
-    rm -f "$times_analyze" "$times_total"
-    echo "NA NA"
-  fi
-}
-
-# ---------- API medians ----------
-run_api_medians_with_sample() {
-  local f="$1"
-  local pip="$2"
-
-  local tmp_req; tmp_req="$(mktemp)"
-  json_with_pipeline "$f" "$pip" > "$tmp_req"
-
-  for _ in $(seq 1 "$WARMUP"); do
-    curl -sS --max-time "$API_TIMEOUT_SEC" -H "Content-Type: application/json" --data-binary @"$tmp_req" "$API_URL" >/dev/null || true
-  done
-
-  local times_analyze; times_analyze="$(mktemp)"
-  local times_total;   times_total="$(mktemp)"
-  local sample_resp=""
-
-  for _ in $(seq 1 "$RUNS"); do
-    tmp_resp="$(mktemp)"
-    http_code="$(curl --http1.1 --max-time "$API_TIMEOUT_SEC" -sS -o "$tmp_resp" -w "%{http_code}" \
-      -H "Content-Type: application/json" --data-binary @"$tmp_req" "$API_URL")"
-
-    if [ "$http_code" != "200" ]; then
-      rm -f "$tmp_resp"
-      break
-    fi
-
-    rt="$(json_get_runtimes_api "$tmp_resp")"
-    if [ -z "$rt" ]; then
-      rm -f "$tmp_resp"
-      break
-    fi
-
-    analyze_ms="$(printf "%s" "$rt" | awk -F'\t' '{print $1}')"
-    total_ms="$(printf "%s" "$rt" | awk -F'\t' '{print $2}')"
-
-    if ! validate_runtimes "$analyze_ms" "$total_ms" >/dev/null 2>&1; then
-      rm -f "$tmp_resp"
-      break
-    fi
-
-    echo "$analyze_ms" >> "$times_analyze"
-    echo "$total_ms"   >> "$times_total"
-
-    if [ -z "$sample_resp" ]; then
-      sample_resp="$tmp_resp"
-    else
-      rm -f "$tmp_resp"
-    fi
-  done
-
-  rm -f "$tmp_req"
-
-  if [ -s "$times_analyze" ] && [ -s "$times_total" ]; then
-    sort -n "$times_analyze" -o "$times_analyze"
-    sort -n "$times_total"   -o "$times_total"
-    med_a="$(cat "$times_analyze" | median_of_sorted)"
-    med_t="$(cat "$times_total"   | median_of_sorted)"
-    rm -f "$times_analyze" "$times_total"
-    echo "$med_a $med_t $sample_resp"
-  else
-    rm -f "$times_analyze" "$times_total"
-    [ -n "$sample_resp" ] && rm -f "$sample_resp"
-    echo "NA NA ''"
-  fi
-}
-
-# ---------- CSV Header ----------
-printf "Testfall;Input-Dateigröße (Byte);Seitenanzahl;ID-CLI runtimeMsAnalyze;ID-CLI runtimeMsTotal;String-CLI runtimeMsAnalyze;String-CLI runtimeMsTotal;ID-API runtimeMsAnalyze;ID-API runtimeMsTotal;String-API runtimeMsAnalyze;String-API runtimeMsTotal;Wortanzahl;Wortzeichenanzahl;Gesamtzeichenanzahl\n" \
-  > "$OUT_FILE_WIDE"
-
-# ---------- Main Loop ----------
-while IFS= read -r f; do
-  testfall="$(basename "$f" .json)"
-  in_bytes="$(wc -c <"$f" | tr -d ' ')"
-  pages="$(json_get_pages_count "$f")"
-
-  read -r id_cli_a id_cli_t <<<"$(run_cli_medians "$f" id)"
-  read -r st_cli_a st_cli_t <<<"$(run_cli_medians "$f" string)"
-  read -r id_api_a id_api_t id_resp <<<"$(run_api_medians_with_sample "$f" id)"
-  read -r st_api_a st_api_t st_resp <<<"$(run_api_medians_with_sample "$f" string)"
-
-  resp_path=""
-  [ -n "$st_resp" ] && [ -f "$st_resp" ] && resp_path="$st_resp"
-  [ -z "$resp_path" ] && [ -n "$id_resp" ] && [ -f "$id_resp" ] && resp_path="$id_resp"
-
-  wc_="NA"; wcc_="NA"; tcc_="NA"
-  if [ -n "$resp_path" ] && [ -f "$resp_path" ]; then
-    counts="$(json_get_counts_domain "$resp_path")"
-    if [ -n "$counts" ]; then
-      wc_="$(printf "%s" "$counts" | awk -F'\t' '{print $1}')"
-      wcc_="$(printf "%s" "$counts" | awk -F'\t' '{print $2}')"
-      tcc_="$(printf "%s" "$counts" | awk -F'\t' '{print $3}')"
-    fi
-  fi
-
-  printf "%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s\n" \
-    "$testfall" \
-    "$(fmt_int_de "$in_bytes")" \
-    "$pages" \
-    "$(fmt_ms_de "$id_cli_a")" \
-    "$(fmt_ms_de "$id_cli_t")" \
-    "$(fmt_ms_de "$st_cli_a")" \
-    "$(fmt_ms_de "$st_cli_t")" \
-    "$(fmt_ms_de "$id_api_a")" \
-    "$(fmt_ms_de "$id_api_t")" \
-    "$(fmt_ms_de "$st_api_a")" \
-    "$(fmt_ms_de "$st_api_t")" \
-    "$(fmt_int_de "$wc_")" \
-    "$(fmt_int_de "$wcc_")" \
-    "$(fmt_int_de "$tcc_")" \
-    >> "$OUT_FILE_WIDE"
-
-done <<< "$FILES"
-
-echo "==> Wrote $OUT_FILE_WIDE"

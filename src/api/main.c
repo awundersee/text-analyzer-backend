@@ -192,10 +192,34 @@ static int handle_analyze(struct mg_connection *conn, void *cbdata) {
     /* Timeout budget for API request */
     double deadline_ms = t_req0 + 10000.0;    
 
-    /* Pipeline selection: request override if present, otherwise AUTO. */
-    app_pipeline_t pipeline = req.has_pipeline_from_options
-                                ? req.pipeline_from_options
-                                : APP_PIPELINE_AUTO;
+    /* ------------------------------------------------------------
+    * Pipeline selection
+    * Priority:
+    *   1) X-Pipeline header (API override)
+    *   2) options.pipeline (from JSON)
+    *   3) AUTO fallback
+    * ------------------------------------------------------------ */
+
+    app_pipeline_t pipeline = APP_PIPELINE_AUTO;
+
+    /* 1) Header override */
+    const char *hp = mg_get_header(conn, "X-Pipeline");
+    if (hp && hp[0] != '\0') {
+        int ok = 1;
+        app_pipeline_t pl = app_pipeline_from_str(hp, &ok);
+        if (!ok) {
+            validated_request_free(&req);
+            free(body);
+            send_json_error(conn, 400, "invalid X-Pipeline (use auto|string|id)");
+            return 400;
+        }
+        pipeline = pl;
+    }
+    /* 2) JSON options.pipeline */
+    else if (req.has_pipeline_from_options) {
+        pipeline = req.pipeline_from_options;
+    }
+    /* 3) otherwise AUTO (already set) */
 
     app_analyze_opts_t aopts = {
         .include_bigrams  = req.include_bigrams,
