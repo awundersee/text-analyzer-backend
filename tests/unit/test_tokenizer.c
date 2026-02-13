@@ -36,20 +36,6 @@ void test_tokenizer_g2_punctuation(void) {
     free_tokens(&tl);
 }
 
-void test_tokenizer_with_stats_counts_including_stopwords(void) {
-    const char *text = "Das ist ein Test";
-    TokenStats st;
-    TokenList tl = tokenize_with_stats(text, &st);
-
-    // Tokens: "das","ist","ein","test"
-    TEST_ASSERT_EQUAL_UINT((unsigned)4, (unsigned)st.wordCount);
-
-    // wordCharCount: 3 + 3 + 3 + 4 = 13
-    TEST_ASSERT_EQUAL_UINT((unsigned)13, (unsigned)st.wordCharCount);
-
-    free_tokens(&tl);
-}
-
 void test_stopwords_g3_basic(void) {
     const char *text = "Das ist ein Test und das ist nur ein Test";
     TokenList tl = tokenize(text);
@@ -75,6 +61,34 @@ void test_freq_g4_basic_counts(void) {
     TEST_ASSERT_EQUAL_UINT((unsigned)1, (unsigned)get_word_count(&wl, "birne"));
 
     free_word_counts(&wl);
+    free_tokens(&tl);
+}
+
+void test_tokenizer_with_stats_counts_including_stopwords(void) {
+    const char *text = "Das ist ein Test";
+    TokenStats st;
+    TokenList tl = tokenize_with_stats(text, &st);
+
+    // Tokens: "das","ist","ein","test"
+    TEST_ASSERT_EQUAL_UINT((unsigned)4, (unsigned)st.wordCount);
+
+    // wordCharCount: 3 + 3 + 3 + 4 = 13
+    TEST_ASSERT_EQUAL_UINT((unsigned)13, (unsigned)st.wordCharCount);
+
+    free_tokens(&tl);
+}
+
+void test_tokenizer_with_stats_counts_including_stopwords_single_letters_umlaut(void) {
+    const char *text = "Das ist z.B. ein Test für einen Online-Shop mit Umlaut.";
+    TokenStats st;
+    TokenList tl = tokenize_with_stats(text, &st);
+
+    // Tokens: "das","ist","ein","test","für","einen","online","shop","mit","Umlaut"
+    TEST_ASSERT_EQUAL_UINT((unsigned)10, (unsigned)st.wordCount);
+
+    // wordCharCount: 3 + 3 + 3 + 4 + 3 + 5 + 6 + 4 + 3 + 6 = 40
+    TEST_ASSERT_EQUAL_UINT((unsigned)40, (unsigned)st.wordCharCount);
+
     free_tokens(&tl);
 }
 
@@ -110,6 +124,7 @@ int main(void) {
     RUN_TEST(test_tokenizer_g1_hallo_welt);
     RUN_TEST(test_tokenizer_g2_punctuation);
     RUN_TEST(test_tokenizer_with_stats_counts_including_stopwords);
+    RUN_TEST(test_tokenizer_with_stats_counts_including_stopwords_single_letters_umlaut);
     RUN_TEST(test_stopwords_g3_basic);
     RUN_TEST(test_freq_g4_basic_counts);
     RUN_TEST(test_aggregate_g5_basic);
