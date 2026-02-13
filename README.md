@@ -1,6 +1,6 @@
 # Text Analyzer Backend (C)
 
-Backend-Komponente des Textanalyse-Tools zur wort- und wortpaarbasierten Analyse
+Die Backend-Komponente des Textanalyse-Tools zur wort- und wortpaarbasierten Analyse
 von Textinhalten aus Webseiten.
 
 Das Frontend der Anwendung ist erreichbar unter:
@@ -17,11 +17,46 @@ angesprochen werden kann.
 Schwerpunkte des Projekts sind:
 
 * Analyse von Textdaten (Wortfrequenzen, Wortpaare / Bigrams)
-* Implementierung der Kernlogik in **C**
-* **Testgetriebene Entwicklung (TDD)**
-* Klare Trennung zwischen Analyse-Core und API-Schicht
+* Implementierung der Kernlogik in C
+* Testgetriebene Entwicklung (TDD)
+* Klare Trennung zwischen einzelnen Komponenten
 * Vergleich und Bewertung unterschiedlicher Analyse-Pipelines
-* Containerisierte Ausführung mit **Docker**
+* Containerisierte Ausführung mit Docker
+
+---
+
+## Externe Abhängigkeiten
+
+Die Kernlogik ist selbst implementiert. Für API-Zugriffe, JSON-Parsing und Tests werden 
+etablierte Open-Source-Bibliotheken eingesetzt. Diese Abhängigkeiten
+werden nicht für die eigentliche Textanalyse verwendet.
+
+Die Kernlogik (Tokenisierung, Stoppwortfilterung, Wort- und Bigram-Analyse,
+Aggregation, Sortierung, Top-K-Auswahl) wurde eigenständig
+implementiert und testgetrieben entwickelt.
+
+### Verwendete Bibliotheken
+
+* **CivetWeb** (MIT)
+
+  * Eingebetteter HTTP-Server für die API-Schicht
+
+* **yyjson** (MIT)
+
+  * Performantes JSON Parsing und Serialisierung
+
+* **Unity Test Framework** (MIT)
+
+  * Unit-Tests im Rahmen der TDD-Strategie
+
+Weitere Lizenz- und Herkunftsinformationen sind in `THIRD_PARTY_NOTICES.md`
+dokumentiert.
+
+### Initiale Einrichtung der Submodule und Abhängigkeiten
+
+```bash
+git submodule update --init --recursive
+```
 
 ---
 
@@ -48,8 +83,8 @@ Eingabedaten und Anwendungsfall eingesetzt werden:
 * Nachteil: höherer Initialaufwand (Mapping / Lookup)
 
 Beide Pipelines liefern **funktional identische Ergebnisse** und werden ausschließlich
-intern unterschieden. Die Auswahl der Pipeline erfolgt deterministisch anhand
-vordefinierter Kriterien (z. B. Eingabegröße / Seitenanzahl).
+intern unterschieden. Die Auswahl der Pipeline erfolgt anhand
+der Dateigröße: ab 1MB Input-Größe wird die ID-Pipeline verwendet.
 
 ---
 
@@ -75,33 +110,37 @@ ctest --test-dir build
 
 ---
 
-## Externe Abhängigkeiten
+## Einzelanalyse einer JSON-Datei
 
-Für API-, Infrastruktur- und Test-Schichten werden bewusst etablierte,
-permissiv lizenzierte Open-Source-Bibliotheken eingesetzt. Diese Abhängigkeiten
-werden **nicht** für die eigentliche Textanalyse verwendet.
+Neben dem Batch-Modus kann die CLI auch eine einzelne JSON-Datei direkt analysieren.
 
-Die Kernlogik (Tokenisierung, Stoppwortfilterung, Wort- und Bigram-Analyse,
-Aggregation, Sortierung, Top-K-Auswahl) wurde vollständig eigenständig
-implementiert und testgetrieben entwickelt.
+### Aufruf
 
-### Verwendete Bibliotheken
+```bash
+./build/analyze_cli data/batch_in/request.json --out result.json
+```
 
-* **CivetWeb** (MIT)
+### Beschreibung
 
-  * Eingebetteter HTTP-Server für die API-Schicht
+* Der erste Parameter ist der Pfad zur JSON-Request-Datei
+* Mit `--out` kann optional eine Ausgabedatei angegeben werden
+* Wird kein `--out` gesetzt, erfolgt die Ausgabe ausschließlich auf `stdout`
 
-* **yyjson** (MIT)
+### Ausgabe-Verhalten
 
-  * Performantes JSON Parsing und Serialisierung
+Auch wenn `--out` verwendet wird, wird das vollständige Analyse-Ergebnis
+zusätzlich in der Kommandozeile (`stdout`) ausgegeben.
 
-* **Unity Test Framework** (MIT)
 
-  * Unit-Tests im Rahmen der TDD-Strategie
-  * Nur in der Testumgebung eingesetzt
+### Optionale Parameter
 
-Weitere Lizenz- und Herkunftsinformationen sind in `THIRD_PARTY_NOTICES.md`
-dokumentiert.
+```bash
+--pipeline auto|string|id
+--topk K
+```
+
+* `--pipeline` erzwingt eine bestimmte Analysevariante
+* `--topk` begrenzt die Anzahl der ausgegebenen Top-Wörter und -Wortpaare
 
 ---
 
@@ -133,14 +172,13 @@ Alternativ mit expliziten Pfaden:
 ### Hinweis
 
 Der Batch-Modus erzeugt **vollständige Analyse-Ergebnisse ohne Top-K-Limit**.
-Die Top-K-Begrenzung wird ausschließlich für API- und UI-Ausgaben verwendet.
 
 ---
 
 ## API
 
-Die HTTP-API dient ausschließlich als dünne Schnittstelle zur Analyse-Logik.
-Die API hat aber verschiedene Grenzen: es werden nur bis zu 100 Seiten analysiert
+Die HTTP-API dient als Schnittstelle zur Analyse-Logik und hat 
+verschiedene Grenzen: es werden nur bis zu 100 Seiten analysiert
 und die Datei darf maximal 10MB groß sein.
 
 ### Endpunkte
@@ -155,7 +193,7 @@ und die Datei darf maximal 10MB groß sein.
   * Liefert Top-K-Wörter und Bigrams pro Seite und für das gesamte Dokument
 
 Die API validiert eingehende Requests strikt (JSON-Schema, Datentypen,
-Grenzwerte) und antwortet bei Fehlern deterministisch mit geeigneten
+Grenzwerte) und antwortet bei Fehlern mit geeigneten
 HTTP-Statuscodes.
 
 ---
@@ -178,22 +216,24 @@ Eine `.dockerignore`-Datei reduziert den Build-Kontext auf notwendige Dateien.
 
 ## Teststrategie
 
-Diese Teststrategie beschreibt die eingesetzten Testarten, deren Zielsetzung sowie die lokale Ausführung der Tests. Ziel ist es, Korrektheit, Stabilität und Performance der Textanalyse reproduzierbar sicherzustellen.
+Die Teststrategie beschreibt die eingesetzten Testarten, deren Zielsetzung 
+sowie die lokale Ausführung der Tests. Ziel ist es, Korrektheit, Stabilität und 
+Performance der Textanalyse reproduzierbar sicherzustellen.
 
 ### Unit-Tests
 
-* Testgetriebene Entwicklung der Analyse-Komponenten
+* Für die testgetriebene Entwicklung der Analyse-Komponenten
 * Tests liegen unter `tests/unit`
 * Fokus auf kleine, isolierte Funktionseinheiten (z. B. Tokenizer, Stoppwortfilter, Aggregation)
-* Deterministische und reproduzierbare Ergebnisse ohne externe Abhängigkeiten
 
-Die Unit-Tests dienen primär der funktionalen Absicherung und Regressionserkennung bei Refactorings oder algorithmischen Änderungen.
+Die Unit-Tests dienen primär der funktionalen Absicherung und Regressionserkennung 
+bei Refactorings oder algorithmischen Änderungen.
 
 ### API-Tests
 
 * Automatisierte End-to-End-Tests der HTTP-Schnittstelle
 * Validierung von Request-Parsing, Validierung, Analysepipeline und Response-Struktur
-* Vergleich der tatsächlichen API-Antworten mit versionierten Erwartungsdaten
+* Vergleich der tatsächlichen API-Antworten mit Erwartungsdaten
 
 Lokale Ausführung:
 
@@ -201,33 +241,40 @@ Lokale Ausführung:
 cmake --build build --target test_api
 ```
 
-Bei Änderungen an API-Testdaten können die erwarteten Ergebnisse neu erzeugt werden:
+Bei Änderungen an API-Testdaten können die Ergebnisse neu erzeugt werden:
 
 ```bash
 chmod +x tests/api/scripts/regen_expected.sh
 API_URL=http://localhost:8080 tests/api/scripts/regen_expected.sh
 ```
 
+Dabei muss beachtet werden, dass dadurch mögliche Fehler im Programmcode
+in die erwarteten Ergebnisse integriert werden. Eine manuelle Prüfung wird 
+daher empfohlen.
+
 ### Performance-Tests
 
-Die Performance-Tests dienen der Analyse von Laufzeit- und Speicherverhalten unter verschiedenen realistischen und synthetischen Lastszenarien.
+Die Performance-Tests dienen der Analyse von Laufzeit- und Speicherverhalten 
+unter verschiedenen realistischen und synthetischen Lastszenarien.
 
 Getestet werden unter anderem:
 
-* Reine Analyse-Laufzeit (```analyze```)
-* Gesamtlaufzeit inklusive Parsing und Serialisierung (```total```)
+* Reine Analyse-Laufzeit (```runtimeMsAnalyze```)
+* Gesamtlaufzeit inklusive Parsing und Serialisierung (```runtimeMsTotal```)
 * Unterschiede zwischen CLI- und API-Ausführung
 * Speicherverbrauch (Peak RSS)
 * Parallele API-Anfragen (Concurrency-Tests)
 * Vergleich der Analysepipelines (```string``` vs. ```id```)
 
-Die Tests ermöglichen es, algorithmische Änderungen oder neue Speicherstrategien objektiv zu bewerten und über mehrere Versionen hinweg vergleichbar zu halten.
+Die Tests ermöglichen es, algorithmische Änderungen oder neue Speicherstrategien 
+objektiv zu bewerten und über mehrere Versionen hinweg vergleichbar zu halten.
 
 Lokale Ausführung:
 
 #### Pipeline-Performance
 
-Misst die Laufzeit der einzelnen Analyse-Pipelines (z. B. freq, id) über verschiedene Eingabedateien. Ziel ist der Vergleich der End-to-End-Laufzeit der Kernverarbeitung unabhängig von Netzwerk- oder API-Overhead.
+Misst die Laufzeit der einzelnen Analyse-Pipelines (```string``` und  ```id```). 
+Ziel ist der Vergleich der End-to-End-Laufzeit der Kernverarbeitung.
 
 ```bash
 cmake --build build --target test_perf_pipeline
@@ -235,31 +282,28 @@ cmake --build build --target test_perf_pipeline
 
 #### Speicherverbrauch
 
-Ermittelt den Speicherverbrauch der Analyse bei unterschiedlich großen Eingaben. Mit ```INCLUDE_LARGE=1``` werden zusätzlich sehr große Testdateien einbezogen, um Speichergrenzen und Skalierungseffekte sichtbar zu machen.
+Ermittelt den Speicherverbrauch der Analyse bei unterschiedlich großen Eingaben. Über Cmake standardmäßig
+ohne die großen Testdateien, die von der API abgelehnt werden (wegen Dateigröße und Seitenanzahl). 
+Mit ```INCLUDE_LARGE=1``` werden auch die großen Testdateien (```tests/performance/data/large/```) 
+einbezogen, um Speichergrenzen und Skalierungseffekte sichtbar zu machen.
 
 ```bash
 INCLUDE_LARGE=1 cmake --build build --target test_perf_mem
 ```
 
-#### API-Baseline vs. Delta
+#### Parallele API-Requests
 
-Vergleicht eine API-Baseline-Ausführung mit inkrementellen Änderungen (Delta). Der Fokus liegt auf der reinen Verarbeitungszeit, nicht auf Netzwerk- oder Serialisierungskosten.
-
-```bash
-cmake --build build --target test_perf_api_baseline_delta
-```
-
-#### API-Concurrency
-
-Testet die API unter paralleler Last. Ziel ist es, Auswirkungen von gleichzeitigen Requests auf Laufzeit und Ressourcenverbrauch zu analysieren. Große Eingaben können optional über ```INCLUDE_LARGE=1``` aktiviert werden.
+Testet die API unter paralleler Last. Ziel ist es, Auswirkungen von gleichzeitigen Requests auf Laufzeit 
+und Ressourcenverbrauch zu analysieren. Große Eingaben können optional über ```INCLUDE_LARGE=1``` aktiviert werden.
 
 ```bash
 INCLUDE_LARGE=1 cmake --build build --target test_perf_api_concurrency
 ```
 
-#### Top-K Laufzeitenmessung (Detailanalyse)
+#### Top-K Laufzeitenmessung
 
-Da die Sortierphase als zentraler Flaschenhals identifiziert wurde, existiert eine dedizierte Messung für die Top-K-Selektion.
+Die Sortierphase ist ein zentraler Flaschenhals und es gibt daher dedizierte Messungen für die Berechnung 
+der Top-Wörter und Top-Wortpaare.
 
 Dabei werden in topk.c gezielt Zeitstempel an mehreren Stellen erfasst:
 
@@ -282,18 +326,20 @@ K=20 cmake --build build --target test_topk_measure
 cmake --build build --target test_topk_measure_perf
 ```
 
-Die Auswertung erfolgt statistisch über alle Top-K-Aufrufe hinweg. Entscheidend ist dabei nicht die Herkunft der Daten (Datei oder Seite), sondern ausschließlich die Anzahl der zu selektierenden Elemente (```n```). Dadurch lässt sich die Laufzeitentwicklung der Top-K-Selektion unabhängig vom Eingabeformat analysieren.
+Die Messung der erfolgt über wiederholte CLI-Aufrufe. Bewertet wird ausschließlich die Laufzeit des 
+Selektionsalgorithmus in Abhängigkeit von der Anzahl der zu sortierenden Elemente (```n```). 
+Dadurch kann das Laufzeitverhalten der Top-K-Operation isoliert analysiert werden.
 
 ### Stress-Tests
 
 Die Stress-Tests prüfen das Systemverhalten bei großen und sehr großen Eingabedaten.
 Unterschieden wird insbesondere zwischen:
 
-* Einseitigen und mehrseitigen Dokumenten
-* Stark skalierten Textmengen (z. B. durch Vervielfältigung)
-* Grenzfällen hinsichtlich Speicher- und Laufzeitlimits
+* Einseitigen und mehrseitigen Dokumenten (```/tests/stress/data/single-page/```und ```/tests/stress/data/multi-page/```)
+* Grenzfälle hinsichtlich Speicher- und Laufzeitlimits ermitteln
 
-Ziel der Stress-Tests ist es, das Verhalten unter realitätsnahen Extrembedingungen zu analysieren, potenzielle Engpässe frühzeitig zu erkennen und die Robustheit der Implementierung für die vorgesehene Zielarchitektur abzusichern.
+Ziel der Stress-Tests ist es, das Verhalten unter Extrembedingungen zu analysieren, potenzielle Engpässe 
+frühzeitig zu erkennen und die Robustheit der Implementierung für die vorgesehene Zielarchitektur abzusichern.
 
 Lokale Ausführung:
 
@@ -305,11 +351,17 @@ cmake --build build --target test_stress_single
 cmake --build build --target test_stress_multi
 ```
 
+#### Große Testdaten erzeugen
+
+Um große Testdaten zu erzeugen befinden sich in den Ordner für mehr- und einseitige JSON-Dateien
+jeweils vier verschiedene JSON-Basis-Dateien, die über die Skripte in den Ordner vervielfacht werden können.
+
+Bitte beachten: es existieren Abhängigkeiten, die ggf. lokal installiert werden müssen.
+
 ### Hinweise
 
-* Alle Tests sind für lokale Ausführung vorgesehen
-* Ergebnisse werden als CSV-Dateien abgelegt und eignen sich zur Weiterverarbeitung (z. B. Liniendiagramme)
-* Die CLI-Tests werden auch im Container ausgeführt; produktiv läuft jedoch ausschließlich die API
+* Alle Tests sind für die lokale Ausführung vorgesehen
+* Ergebnisse werden als CSV-Dateien abgelegt (jeweils in den Unterordnern ```/results/```) und eignen sich zur Weiterverarbeitung (z. B. Liniendiagramme)
 
 ---
 
