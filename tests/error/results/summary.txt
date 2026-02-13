@@ -1,5 +1,0 @@
-Total cases: 18
-CLI pass: 18 (NA: 0)
-API pass: 18 (NA: 0)
-Both pass: 18
-Mismatches (investigate / gaps): 0
