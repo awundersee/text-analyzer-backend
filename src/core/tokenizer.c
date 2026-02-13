@@ -22,6 +22,15 @@ static size_t utf8_dash_len(const unsigned char *s, size_t remaining) {
     return 0;
 }
 
+static size_t utf8_strlen_n(const char *s, size_t n) {
+    size_t count = 0;
+    for (size_t i = 0; s && i < n; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if ((c & 0xC0) != 0x80) count++;
+    }
+    return count;
+}
+
 TokenList tokenize_with_stats(const char *text, TokenStats *stats) {
     TokenList out = (TokenList){0};
 
@@ -47,7 +56,7 @@ TokenList tokenize_with_stats(const char *text, TokenStats *stats) {
         }
         if (i >= len) break;
 
-        count++;
+        size_t start = i;
 
         while (i < len) {
             size_t d = utf8_dash_len((const unsigned char *)&text[i], len - i);
@@ -55,6 +64,10 @@ TokenList tokenize_with_stats(const char *text, TokenStats *stats) {
             if (is_split_char((unsigned char)text[i])) break;
             i++;
         }
+
+        size_t tlen = i - start;
+        if (utf8_strlen_n(&text[start], tlen) >= 2) count++;
+
     }
 
     if (count == 0) return out;
@@ -90,6 +103,9 @@ TokenList tokenize_with_stats(const char *text, TokenStats *stats) {
         size_t end = i;
         size_t tlen = end - start;
 
+        size_t ulen = utf8_strlen_n(&text[start], tlen);
+        if (ulen < 2) continue;
+
         char *tok = (char *)malloc(tlen + 1);
         if (!tok) {
             /* Allocation failure aborts tokenization safely. */
@@ -110,7 +126,7 @@ TokenList tokenize_with_stats(const char *text, TokenStats *stats) {
 
         if (stats) {
             stats->wordCount += 1;
-            stats->wordCharCount += tlen;
+            stats->wordCharCount += ulen;
         }
     }
 

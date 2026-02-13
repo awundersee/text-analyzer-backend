@@ -18,7 +18,7 @@
 #include "yyjson.h"
 
 /* AUTO pipeline switch threshold (total input chars). */
-#define PIPELINE_THRESHOLD_CHARS (256 * 1024) // 256 KB
+#define PIPELINE_THRESHOLD_CHARS (1000 * 1024) // 1000 KB
 
 /* Measurement point for meta.runtimeMsAnalyze (core analysis only). */
 static double now_ms(void) {
@@ -78,22 +78,29 @@ static const char* pipeline_requested_str(const app_analyze_opts_t *opts) {
     }
 }
 
+static size_t utf8_strlen(const char *s) {
+    size_t count = 0;
+    while (*s) {
+        if (((unsigned char)*s & 0xC0) != 0x80) {
+            count++;  // Count only leading bytes (new codepoint)
+        }
+        s++;
+    }
+    return count;
+}
+
 /* Computes basic text metrics for meta/domain/page reporting.
- * Metrics are based on the token stream used for word results (filtered tokens).
+ * Metrics are based on the raw token stream (includes stopwords).
  */
 static TextMetrics compute_metrics(const char *text, TokenList tokens) {
     TextMetrics m = {0};
 
-    if (text) {
-        m.charCount = strlen(text);
-    }
+    if (text) m.charCount = utf8_strlen(text);
 
     m.wordCount = tokens.count;
 
     for (size_t i = 0; i < tokens.count; i++) {
-        if (tokens.items[i]) {
-            m.wordCharCount += strlen(tokens.items[i]);
-        }
+        if (tokens.items[i]) m.wordCharCount += utf8_strlen(tokens.items[i]);
     }
 
     return m;
@@ -166,7 +173,7 @@ app_analyze_result_t app_analyze_pages(const app_page_t *pages, size_t n_pages, 
         TokenList filtered = filter_stopwords_copy(&raw, stop_path);
 
         /* Metrics are derived from the same token stream as word results. */
-        page_metrics[i] = compute_metrics(t, filtered);
+        page_metrics[i] = compute_metrics(t, raw);
 
         domain_metrics.charCount     += page_metrics[i].charCount;
         domain_metrics.wordCount     += page_metrics[i].wordCount;
