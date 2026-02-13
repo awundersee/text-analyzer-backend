@@ -105,6 +105,7 @@ static const char *reason_phrase(int code) {
         case 401: return "Unauthorized";
         case 413: return "Payload Too Large";
         case 500: return "Internal Server Error";
+        case 503: return "Service Unavailable";
         default:  return "OK";
     }
 }
@@ -188,6 +189,9 @@ static int handle_analyze(struct mg_connection *conn, void *cbdata) {
     /* API policy: default Top-K (kept small to limit response size). */
     size_t k = 20;
 
+    /* Timeout budget for API request */
+    double deadline_ms = t_req0 + 10000.0;    
+
     /* Pipeline selection: request override if present, otherwise AUTO. */
     app_pipeline_t pipeline = req.has_pipeline_from_options
                                 ? req.pipeline_from_options
@@ -200,6 +204,7 @@ static int handle_analyze(struct mg_connection *conn, void *cbdata) {
         .top_k            = k,
         .domain           = req.domain,   // pointer into req.doc
         .pipeline         = pipeline,
+        .deadline_ms = deadline_ms,
     };
 
     /* Core analysis stage (pipeline switch happens in app layer). */
@@ -263,7 +268,7 @@ int main(int argc, char **argv) {
 
     const char *options[] = {
         "listening_ports", port,
-        "num_threads", "4",
+        "num_threads", "2",
         "request_timeout_ms", "10000",
         "enable_keep_alive", "yes",
         0

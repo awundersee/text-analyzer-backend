@@ -59,6 +59,8 @@ typedef struct {
     size_t top_k;       // 0 = FULL, >0 = TopK
     const char *domain; // optional (echoed into meta)
     app_pipeline_t pipeline;
+
+    double deadline_ms; // 0 = no timeout; otherwise absolute time (now_ms()) when to abort
 } app_analyze_opts_t;
 
 /* Result container for API/CLI.
