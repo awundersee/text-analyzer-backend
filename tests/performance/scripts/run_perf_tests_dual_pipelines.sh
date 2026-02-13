@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # -------------------------------
-# Performance test runner (CLI+API) – dual pipelines
+# Performance test runner (CLI+API) – dual pipelines + WIDE CSV summary
 #
 # Features:
 # - Runs BOTH pipelines: string + id (for CLI and API)
@@ -12,15 +12,17 @@ set -euo pipefail
 # - Validates: total >= analyze (and analyze>=0, total>0)
 # - Timeouts for CLI and API to avoid hangs on huge inputs
 # - Keeps going on errors (writes NA rows with comment)
-# - Writes per-mode CSVs with an extra "pipeline" column
+# - Writes per-mode CSVs (long format) and one WIDE CSV summary (one row per test file)
+#
+# WIDE CSV additions:
+# - Adds CLI + API runtimes as separate columns (both pipelines)
+# - Output-Dateigröße (Byte) is the size of the CLI JSON output file on disk
+#   (configurable via CLI_JSON_ARGS; default: --json)
+# - Wort/Zeichen counts come from API response domainResult.*
 #
 # Usage examples:
-#   # API in docker must be running (rebuild after code changes):
-#   #   docker compose up -d --build
 #   API_URL=http://127.0.0.1:8080/analyze RUNS=5 WARMUP=1 bash tests/performance/scripts/run_perf_tests_dual_pipelines.sh
-#
-#   # CLI build must exist:
-#   cmake -S . -B build && cmake --build build -j
+#   CLI_JSON_ARGS="--json" bash tests/performance/scripts/run_perf_tests_dual_pipelines.sh
 # -------------------------------
 
 # --- JSON parser (portable) ---
@@ -55,6 +57,7 @@ OUT_DIR="${OUT_DIR:-tests/performance/results}"
 ts="$(date +%Y%m%d-%H%M%S)"
 OUT_FILE_CLI="${OUT_FILE_CLI:-$OUT_DIR/perf_cli_pipelines_${ts}.csv}"
 OUT_FILE_API="${OUT_FILE_API:-$OUT_DIR/perf_api_pipelines_${ts}.csv}"
+OUT_FILE_WIDE="${OUT_FILE_WIDE:-$OUT_DIR/perf_wide_api_cli_${ts}.csv}"
 
 BIN="${BIN:-${BUILD_DIR}/analyze_cli}"
 
@@ -190,7 +193,9 @@ sys.exit(p.returncode if p.returncode is not None else 0)
 PY
 }
 
-# -------- CLI --------
+# -------------------------------
+# CLI LONG CSV
+# -------------------------------
 while IFS= read -r f; do
   for pip in $PIPELINES; do
     echo "==> CLI [$pip] $f" >&2
@@ -260,7 +265,9 @@ done <<< "$FILES"
 
 echo "==> Wrote $OUT_FILE_CLI"
 
-# -------- API --------
+# -------------------------------
+# API LONG CSV
+# -------------------------------
 while IFS= read -r f; do
   for pip in $PIPELINES; do
     echo "==> API [$pip] $f" >&2
@@ -269,7 +276,7 @@ while IFS= read -r f; do
     tmp_req="$(mktemp)"
     json_with_pipeline "$f" "$pip" > "$tmp_req"
 
-    # Warmup runs (ignored). If warmup fails, still proceed with measured runs.
+    # Warmup runs (ignored)
     for _ in $(seq 1 "$WARMUP"); do
       curl -sS --max-time "$API_TIMEOUT_SEC" -H "Content-Type: application/json" --data-binary @"$tmp_req" "$API_URL" >/dev/null || true
     done
@@ -361,3 +368,235 @@ while IFS= read -r f; do
 done <<< "$FILES"
 
 echo "==> Wrote $OUT_FILE_API"
+
+# ============================================================
+# WIDE CSV SUMMARY (one row per test case)
+# - Runtimes: medians from CLI + API, both pipelines
+# - Counts: from API response domainResult
+# ============================================================
+
+# ---------- DE format helpers ----------
+fmt_ms_de() { awk -v x="$1" 'BEGIN{ if (x=="NA" || x=="") print "NA"; else printf "%.3f", x }' | sed 's/\./,/g'; }
+
+fmt_int_de() {
+  "$PY" - "$1" <<'PY'
+import sys
+n = sys.argv[1]
+if n in ("", "NA"):
+    print("NA")
+else:
+    try:
+        v = int(float(n))
+        print(f"{v:,}".replace(",", "."))
+    except:
+        print("NA")
+PY
+}
+
+# ---------- Page count from request JSON ----------
+json_get_pages_count() {
+  "$PY" - "$1" <<'PY'
+import json, sys
+p = sys.argv[1]
+try:
+    with open(p, "rb") as f:
+        o = json.load(f)
+    if isinstance(o, list):
+        print(len(o))
+    elif isinstance(o, dict) and isinstance(o.get("pages"), list):
+        print(len(o["pages"]))
+    else:
+        print(1)
+except Exception:
+    print(1)
+PY
+}
+
+# Counts from API response
+json_get_counts_domain() {
+  "$PY" - "$1" <<'PY'
+import json, sys
+p = sys.argv[1]
+try:
+    with open(p, "rb") as f:
+        o = json.load(f)
+    dr = o.get("domainResult", {}) or {}
+    wc  = dr.get("wordCount", "")
+    wcc = dr.get("wordCharCount", "")
+    cc  = dr.get("charCount", "")
+    if wc=="" or wcc=="" or cc=="":
+        print("")
+    else:
+        print(f"{wc}\t{wcc}\t{cc}")
+except Exception:
+    print("")
+PY
+}
+
+# ---------- CLI medians ----------
+run_cli_medians() {
+  local f="$1"
+  local pip="$2"
+
+  for _ in $(seq 1 "$WARMUP"); do
+    run_with_timeout "$CLI_TIMEOUT_SEC" "$BIN" "$f" --pipeline "$pip" >/dev/null || true
+  done
+
+  local times_analyze; times_analyze="$(mktemp)"
+  local times_total;   times_total="$(mktemp)"
+  local comment=""
+
+  for _ in $(seq 1 "$RUNS"); do
+    out="$(run_with_timeout "$CLI_TIMEOUT_SEC" "$BIN" "$f" --pipeline "$pip" 2>&1)" || true
+    rc=$?
+
+    if [ $rc -ne 0 ]; then
+      comment="cli_error"
+      break
+    fi
+
+    total_ms="$(printf "%s\n" "$out" | awk -F= '/^runtime_ms_total=/{print $2; exit}')"
+    analyze_ms="$(printf "%s\n" "$out" | awk -F= '/^runtime_ms_analyze=/{print $2; exit}')"
+
+    if [ -z "$total_ms" ] || [ -z "$analyze_ms" ]; then
+      comment="cli_parse_error"
+      break
+    fi
+
+    if ! validate_runtimes "$analyze_ms" "$total_ms" >/dev/null 2>&1; then
+      comment="cli_invalid"
+      break
+    fi
+
+    echo "$analyze_ms" >> "$times_analyze"
+    echo "$total_ms"   >> "$times_total"
+  done
+
+  if [ -s "$times_analyze" ] && [ -s "$times_total" ] && [ -z "$comment" ]; then
+    sort -n "$times_analyze" -o "$times_analyze"
+    sort -n "$times_total"   -o "$times_total"
+    med_a="$(cat "$times_analyze" | median_of_sorted)"
+    med_t="$(cat "$times_total"   | median_of_sorted)"
+    rm -f "$times_analyze" "$times_total"
+    echo "$med_a $med_t"
+  else
+    rm -f "$times_analyze" "$times_total"
+    echo "NA NA"
+  fi
+}
+
+# ---------- API medians ----------
+run_api_medians_with_sample() {
+  local f="$1"
+  local pip="$2"
+
+  local tmp_req; tmp_req="$(mktemp)"
+  json_with_pipeline "$f" "$pip" > "$tmp_req"
+
+  for _ in $(seq 1 "$WARMUP"); do
+    curl -sS --max-time "$API_TIMEOUT_SEC" -H "Content-Type: application/json" --data-binary @"$tmp_req" "$API_URL" >/dev/null || true
+  done
+
+  local times_analyze; times_analyze="$(mktemp)"
+  local times_total;   times_total="$(mktemp)"
+  local sample_resp=""
+
+  for _ in $(seq 1 "$RUNS"); do
+    tmp_resp="$(mktemp)"
+    http_code="$(curl --http1.1 --max-time "$API_TIMEOUT_SEC" -sS -o "$tmp_resp" -w "%{http_code}" \
+      -H "Content-Type: application/json" --data-binary @"$tmp_req" "$API_URL")"
+
+    if [ "$http_code" != "200" ]; then
+      rm -f "$tmp_resp"
+      break
+    fi
+
+    rt="$(json_get_runtimes_api "$tmp_resp")"
+    if [ -z "$rt" ]; then
+      rm -f "$tmp_resp"
+      break
+    fi
+
+    analyze_ms="$(printf "%s" "$rt" | awk -F'\t' '{print $1}')"
+    total_ms="$(printf "%s" "$rt" | awk -F'\t' '{print $2}')"
+
+    if ! validate_runtimes "$analyze_ms" "$total_ms" >/dev/null 2>&1; then
+      rm -f "$tmp_resp"
+      break
+    fi
+
+    echo "$analyze_ms" >> "$times_analyze"
+    echo "$total_ms"   >> "$times_total"
+
+    if [ -z "$sample_resp" ]; then
+      sample_resp="$tmp_resp"
+    else
+      rm -f "$tmp_resp"
+    fi
+  done
+
+  rm -f "$tmp_req"
+
+  if [ -s "$times_analyze" ] && [ -s "$times_total" ]; then
+    sort -n "$times_analyze" -o "$times_analyze"
+    sort -n "$times_total"   -o "$times_total"
+    med_a="$(cat "$times_analyze" | median_of_sorted)"
+    med_t="$(cat "$times_total"   | median_of_sorted)"
+    rm -f "$times_analyze" "$times_total"
+    echo "$med_a $med_t $sample_resp"
+  else
+    rm -f "$times_analyze" "$times_total"
+    [ -n "$sample_resp" ] && rm -f "$sample_resp"
+    echo "NA NA ''"
+  fi
+}
+
+# ---------- CSV Header ----------
+printf "Testfall;Input-Dateigröße (Byte);Seitenanzahl;ID-CLI runtimeMsAnalyze;ID-CLI runtimeMsTotal;String-CLI runtimeMsAnalyze;String-CLI runtimeMsTotal;ID-API runtimeMsAnalyze;ID-API runtimeMsTotal;String-API runtimeMsAnalyze;String-API runtimeMsTotal;Wortanzahl;Wortzeichenanzahl;Gesamtzeichenanzahl\n" \
+  > "$OUT_FILE_WIDE"
+
+# ---------- Main Loop ----------
+while IFS= read -r f; do
+  testfall="$(basename "$f" .json)"
+  in_bytes="$(wc -c <"$f" | tr -d ' ')"
+  pages="$(json_get_pages_count "$f")"
+
+  read -r id_cli_a id_cli_t <<<"$(run_cli_medians "$f" id)"
+  read -r st_cli_a st_cli_t <<<"$(run_cli_medians "$f" string)"
+  read -r id_api_a id_api_t id_resp <<<"$(run_api_medians_with_sample "$f" id)"
+  read -r st_api_a st_api_t st_resp <<<"$(run_api_medians_with_sample "$f" string)"
+
+  resp_path=""
+  [ -n "$st_resp" ] && [ -f "$st_resp" ] && resp_path="$st_resp"
+  [ -z "$resp_path" ] && [ -n "$id_resp" ] && [ -f "$id_resp" ] && resp_path="$id_resp"
+
+  wc_="NA"; wcc_="NA"; tcc_="NA"
+  if [ -n "$resp_path" ] && [ -f "$resp_path" ]; then
+    counts="$(json_get_counts_domain "$resp_path")"
+    if [ -n "$counts" ]; then
+      wc_="$(printf "%s" "$counts" | awk -F'\t' '{print $1}')"
+      wcc_="$(printf "%s" "$counts" | awk -F'\t' '{print $2}')"
+      tcc_="$(printf "%s" "$counts" | awk -F'\t' '{print $3}')"
+    fi
+  fi
+
+  printf "%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s\n" \
+    "$testfall" \
+    "$(fmt_int_de "$in_bytes")" \
+    "$pages" \
+    "$(fmt_ms_de "$id_cli_a")" \
+    "$(fmt_ms_de "$id_cli_t")" \
+    "$(fmt_ms_de "$st_cli_a")" \
+    "$(fmt_ms_de "$st_cli_t")" \
+    "$(fmt_ms_de "$id_api_a")" \
+    "$(fmt_ms_de "$id_api_t")" \
+    "$(fmt_ms_de "$st_api_a")" \
+    "$(fmt_ms_de "$st_api_t")" \
+    "$(fmt_int_de "$wc_")" \
+    "$(fmt_int_de "$wcc_")" \
+    "$(fmt_int_de "$tcc_")" \
+    >> "$OUT_FILE_WIDE"
+
+done <<< "$FILES"
+
+echo "==> Wrote $OUT_FILE_WIDE"
