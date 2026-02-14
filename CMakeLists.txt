@@ -193,6 +193,17 @@ add_custom_target(test_error
   COMMENT "Running all error test suites (CLI + API)"
 )
 
+add_custom_target(test_perf_api_prod_avg5
+  COMMAND ${CMAKE_COMMAND} -E env
+          API_URL=https://textanalyse.wundersee.dev/analyze
+          DATA_DIR=tests/performance/data
+          RUNS=5
+          OUT_DIR=tests/performance/results
+          bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/performance/scripts/run_api_prod_avg5.sh
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  COMMENT "Running API prod performance test (avg of 5 runs)"
+)
+
 # ------------------------------------------------------------
 # API Dependencies – [EXTERN] CivetWeb + [EXTERN] yyjson
 # ------------------------------------------------------------

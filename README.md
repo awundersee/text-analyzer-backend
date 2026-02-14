@@ -330,6 +330,23 @@ Die Messung der erfolgt über wiederholte CLI-Aufrufe. Bewertet wird ausschließ
 Selektionsalgorithmus in Abhängigkeit von der Anzahl der zu sortierenden Elemente (```n```). 
 Dadurch kann das Laufzeitverhalten der Top-K-Operation isoliert analysiert werden.
 
+#### API Produktions-Performance
+
+Es werden alle Testdateien unter ```/data/``` in der Zielumgebung analysiert und der Durchschnitt aus
+fünf Durchläufen jeweils für
+
+* `meta.runtimeMsAnalyze` – reine Analysezeit
+* `meta.runtimeMsTotal` – Gesamtverarbeitungszeit (inkl. Overhead)
+* `meta.peakRssKiB` – maximaler Speicherverbrauch pro Lauf
+
+als CSV-Datei abgespeichert.
+
+Beispielaufruf:
+
+```bash
+cmake --build build --target test_perf_api_prod_avg5
+```
+
 ### Stress-Tests
 
 Die Stress-Tests prüfen das Systemverhalten bei großen und sehr großen Eingabedaten.
