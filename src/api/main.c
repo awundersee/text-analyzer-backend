@@ -110,17 +110,48 @@ static const char *reason_phrase(int code) {
     }
 }
 
+static const char *cors_allow_origin(struct mg_connection *conn) {
+    const char *origin = mg_get_header(conn, "Origin");
+    if (!origin || origin[0] == '\0') return NULL;
+
+    /* Allowlist für lokale Frontends (dev + preview) */
+    if (strcmp(origin, "http://localhost:5173") == 0) return origin;
+    if (strcmp(origin, "http://localhost:4173") == 0) return origin;
+
+    /* Optional: weitere Origins erlauben (z.B. dein Prod-Frontend) */
+    // if (strcmp(origin, "https://dein-frontend.example") == 0) return origin;
+
+    return NULL;
+}
+
+static void send_cors_headers(struct mg_connection *conn) {
+    const char *allow = cors_allow_origin(conn);
+    if (allow) {
+        mg_printf(conn, "Access-Control-Allow-Origin: %s\r\n", allow);
+        mg_printf(conn, "Vary: Origin\r\n");
+    }
+    mg_printf(conn, "Access-Control-Allow-Methods: POST, OPTIONS\r\n");
+    mg_printf(conn, "Access-Control-Allow-Headers: content-type, x-api-key, x-pipeline\r\n");
+    mg_printf(conn, "Access-Control-Max-Age: 60\r\n");
+}
+
 /* Sends pre-serialized JSON with minimal headers (no caching). */
 static void send_json(struct mg_connection *conn, int status_code, const char *json_body) {
     if (!conn || !json_body) return;
     mg_printf(conn,
-              "HTTP/1.1 %d %s\r\n"
+              "HTTP/1.1 %d %s\r\n",
+              status_code, reason_phrase(status_code));
+
+    /* CORS */
+    send_cors_headers(conn);
+
+    mg_printf(conn,
               "Content-Type: application/json; charset=utf-8\r\n"
               "Cache-Control: no-store\r\n"
               "Content-Length: %zu\r\n"
               "\r\n"
               "%s",
-              status_code, reason_phrase(status_code), strlen(json_body), json_body);
+              strlen(json_body), json_body);
 }
 
 /* Error response helper (keeps API output JSON-shaped). */
@@ -148,6 +179,14 @@ static int handle_health(struct mg_connection *conn, void *cbdata) {
 
 static int handle_analyze(struct mg_connection *conn, void *cbdata) {
     const AppConfig *cfg = (const AppConfig *)cbdata;
+
+    const struct mg_request_info *ri = mg_get_request_info(conn);
+    if (ri && ri->request_method && strcmp(ri->request_method, "OPTIONS") == 0) {
+        mg_printf(conn, "HTTP/1.1 204 No Content\r\n");
+        send_cors_headers(conn);
+        mg_printf(conn, "Content-Length: 0\r\n\r\n");
+        return 204;
+    }
 
     /* Measurement point: total request runtime (includes parse/validate/analyze/serialize). */
     double t_req0 = now_ms();
