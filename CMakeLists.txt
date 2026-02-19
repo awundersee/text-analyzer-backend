@@ -204,6 +204,12 @@ add_custom_target(test_perf_api_prod_avg5
   COMMENT "Running API prod performance test (avg of 5 runs)"
 )
 
+add_custom_target(test_concurrency_api_prod
+  COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/performance/scripts/run_api_prod_concurrency.sh
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  COMMENT "Running API prod concurrency tests"
+)
+
 # ------------------------------------------------------------
 # API Dependencies – [EXTERN] CivetWeb + [EXTERN] yyjson
 # ------------------------------------------------------------

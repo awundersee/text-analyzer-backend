@@ -362,6 +362,24 @@ cmake --build build --target test_perf_api_prod_avg5
 Die Tests werden in der Zielarchitektur durchgeführt, daher muss das Programm unter 
 ```https://textanalyse.wundersee.dev/analyze``` aufrufbar sein.
 
+#### API Produktions-Performance parallele Aufrufe
+
+Es werden alle Testdateien unter ```/data/``` in der Zielumgebung getestet. Dabei wird für 
+jede Testdatei die ID-Pipeline mit einem, vier, acht und 16 parallelen Aufrufen getestet.
+
+Die Tests werden fünf Mal wiederholt und die längste, kürzeste sowie Durchschnittslaufzeit sowie 
+der Speicherverbrauchen werden pro Datei in einer CSV-Datei abgespeichert.
+
+Beispielaufruf:
+
+```bash
+cmake --build build --target test_concurrency_api_prod
+```
+
+Die Tests werden in der Zielarchitektur durchgeführt, daher muss das Programm unter 
+```https://textanalyse.wundersee.dev/analyze``` aufrufbar sein.
+
+
 ### Stress-Tests
 
 Die Stress-Tests prüfen das Systemverhalten bei großen und sehr großen Eingabedaten.
