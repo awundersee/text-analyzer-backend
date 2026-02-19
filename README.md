@@ -280,6 +280,10 @@ Ziel ist der Vergleich der End-to-End-Laufzeit der Kernverarbeitung.
 cmake --build build --target test_perf_pipeline
 ```
 
+Die Tests werden lokal in der CLI und API durchgeführt. Für die API muss das Programm mit 
+Docker laufen und über ```http://127.0.0.1:8080/analyze``` aufrufbar sein. Für die CLI muss ein lokaler Build vorhanden
+sein.
+
 #### Speicherverbrauch
 
 Ermittelt den Speicherverbrauch der Analyse bei unterschiedlich großen Eingaben. Über Cmake standardmäßig
@@ -291,6 +295,10 @@ einbezogen, um Speichergrenzen und Skalierungseffekte sichtbar zu machen.
 INCLUDE_LARGE=1 cmake --build build --target test_perf_mem
 ```
 
+Die Tests werden lokal in der CLI und API durchgeführt. Für die API muss das Programm mit 
+Docker laufen und über ```http://127.0.0.1:8080/analyze``` aufrufbar sein. Für die CLI muss ein lokaler Build vorhanden
+sein.
+
 #### Parallele API-Requests
 
 Testet die API unter paralleler Last. Ziel ist es, Auswirkungen von gleichzeitigen Requests auf Laufzeit 
@@ -299,6 +307,10 @@ und Ressourcenverbrauch zu analysieren. Große Eingaben können optional über `
 ```bash
 INCLUDE_LARGE=1 cmake --build build --target test_perf_api_concurrency
 ```
+
+Die Tests werden lokal in der CLI und API durchgeführt. Für die API muss das Programm mit 
+Docker laufen und über ```http://127.0.0.1:8080/analyze``` aufrufbar sein. Für die CLI muss ein lokaler Build vorhanden
+sein.
 
 #### Top-K Laufzeitenmessung
 
@@ -347,6 +359,9 @@ Beispielaufruf:
 cmake --build build --target test_perf_api_prod_avg5
 ```
 
+Die Tests werden in der Zielarchitektur durchgeführt, daher muss das Programm unter 
+```https://textanalyse.wundersee.dev/analyze``` aufrufbar sein.
+
 ### Stress-Tests
 
 Die Stress-Tests prüfen das Systemverhalten bei großen und sehr großen Eingabedaten.
@@ -367,6 +382,8 @@ cmake --build build --target test_stress_single
 ```bash
 cmake --build build --target test_stress_multi
 ```
+
+Die Tests werden lokal in der CLI durchgeführt, dafür muss ein vollständiger Build vorhanden sein.
 
 #### Große Testdaten erzeugen
 
